@@ -1,0 +1,36 @@
+# --- SECRETS: never commit these ---
+.env
+.env.local
+*.key
+secrets.*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- Bot working files (regenerated every run) ---
+workspace/projects/
+!workspace/projects/.gitkeep
+assets/background_music/*.mp3
+assets/background_music/*.wav
+assets/background_music/*.m4a
+assets/background_music/*.flac
+assets/fonts/*.ttf
+assets/fonts/*.otf
+!assets/fonts/.gitkeep
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs / caches ---
+*.log
+.cache/
+temp_audio/
+temp_images/
+output_videos/

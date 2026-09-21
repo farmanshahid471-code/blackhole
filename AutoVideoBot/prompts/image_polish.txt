@@ -1,0 +1,5 @@
+A cinematic, photorealistic still frame illustrating this line of narration:
+"{narration}".
+Specific subject in the centre of the frame, shallow depth of field,
+volumetric lighting, atmospheric haze, rich colour grading, shot on 35mm
+film, highly detailed, no text, no watermark.

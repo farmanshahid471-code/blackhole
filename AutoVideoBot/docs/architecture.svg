@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 900" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/><stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="stage" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f6feb"/><stop offset="1" stop-color="#388bfd"/>
+    </linearGradient>
+    <linearGradient id="prov" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#238636"/><stop offset="1" stop-color="#2ea043"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2ea043"/>
+    </marker>
+  </defs>
+
+  <rect width="1180" height="900" fill="url(#bg)"/>
+  <text x="590" y="46" fill="#f0f6fc" font-size="30" font-weight="700" text-anchor="middle">AutoVideoBot — architecture</text>
+  <text x="590" y="72" fill="#8b949e" font-size="15" text-anchor="middle">script in → finished video out · every coloured box is a hot-swappable provider</text>
+
+  <!-- you -->
+  <rect x="470" y="92" width="240" height="52" rx="10" fill="#30363d" stroke="#8b949e"/>
+  <text x="590" y="115" fill="#f0f6fc" font-size="16" font-weight="600" text-anchor="middle">YOU</text>
+  <text x="590" y="134" fill="#8b949e" font-size="12" text-anchor="middle">script.txt with timestamps · or a topic</text>
+  <line x1="590" y1="144" x2="590" y2="170" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- main.py -->
+  <rect x="430" y="172" width="320" height="48" rx="10" fill="#6e40c9"/>
+  <text x="590" y="202" fill="#fff" font-size="17" font-weight="700" text-anchor="middle">main.py  (command line)</text>
+  <line x1="590" y1="220" x2="590" y2="246" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- pipeline -->
+  <rect x="250" y="248" width="680" height="66" rx="12" fill="url(#stage)"/>
+  <text x="590" y="276" fill="#fff" font-size="18" font-weight="700" text-anchor="middle">bot/pipeline.py — the orchestrator</text>
+  <text x="590" y="298" fill="#dbe7ff" font-size="13" text-anchor="middle">runs 10 stages · skips finished work via manifest.json · retries &amp; resumes</text>
+
+  <!-- stage strip -->
+  <g font-size="11.5" fill="#f0f6fc" text-anchor="middle">
+    <rect x="60"  y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="110" y="359">1 script</text><text x="110" y="375" fill="#dbe7ff">parse / LLM</text>
+    <rect x="170" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="220" y="359">2 voice</text><text x="220" y="375" fill="#dbe7ff">TTS + words</text>
+    <rect x="280" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="330" y="359">3 timing</text><text x="330" y="375" fill="#dbe7ff">fit stamps</text>
+    <rect x="390" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="440" y="359">4 images</text><text x="440" y="375" fill="#dbe7ff">GPU / free</text>
+    <rect x="500" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="550" y="359">5 motion</text><text x="550" y="375" fill="#dbe7ff">Ken Burns</text>
+    <rect x="610" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="660" y="359">6 join</text><text x="660" y="375" fill="#dbe7ff">crossfade</text>
+    <rect x="720" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="770" y="359">7 captions</text><text x="770" y="375" fill="#dbe7ff">word-true</text>
+    <rect x="830" y="340" width="100" height="46" rx="8" fill="#1f6feb"/><text x="880" y="359">8 mix</text><text x="880" y="375" fill="#dbe7ff">duck music</text>
+    <rect x="940" y="340" width="90"  height="46" rx="8" fill="#1f6feb"/><text x="985" y="359">9 mux</text><text x="985" y="375" fill="#dbe7ff">final mp4</text>
+    <rect x="1040" y="340" width="90" height="46" rx="8" fill="#1f6feb"/><text x="1085" y="359">10 extras</text><text x="1085" y="375" fill="#dbe7ff">thumb+meta</text>
+  </g>
+  <line x1="590" y1="314" x2="590" y2="336" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- provider sockets -->
+  <text x="60" y="428" fill="#8b949e" font-size="13">PROVIDERS (config.yaml chooses; registry.py wires):</text>
+  <g font-size="12">
+    <rect x="60" y="442" width="250" height="120" rx="10" fill="#21262d" stroke="#2ea043"/>
+    <text x="72" y="464" fill="#2ea043" font-weight="700">LLM</text>
+    <text x="72" y="484" fill="#f0f6fc">deepseek · openai_compat · ollama</text>
+    <text x="72" y="502" fill="#f0f6fc">manual (your script only)</text>
+    <text x="72" y="526" fill="#8b949e">writes narration + image prompts</text>
+    <text x="72" y="544" fill="#8b949e">+ titles / description / tags</text>
+
+    <rect x="330" y="442" width="250" height="120" rx="10" fill="#21262d" stroke="#2ea043"/>
+    <text x="342" y="464" fill="#2ea043" font-weight="700">TTS</text>
+    <text x="342" y="484" fill="#f0f6fc">voicestudio · edge · elevenlabs</text>
+    <text x="342" y="502" fill="#f0f6fc">openai_tts · piper · espeak</text>
+    <text x="342" y="526" fill="#8b949e">voice + word timings</text>
+    <text x="342" y="544" fill="#8b949e">(VoiceStudio: exact duration)</text>
+
+    <rect x="600" y="442" width="250" height="120" rx="10" fill="#21262d" stroke="#2ea043"/>
+    <text x="612" y="464" fill="#2ea043" font-weight="700">IMAGE</text>
+    <text x="612" y="484" fill="#f0f6fc">vast (auto rent+destroy)</text>
+    <text x="612" y="502" fill="#f0f6fc">colab · kaggle · sdwebui · gradio</text>
+    <text x="612" y="520" fill="#f0f6fc">replicate · pollinations (free)</text>
+    <text x="612" y="544" fill="#8b949e">one picture per scene</text>
+
+    <rect x="870" y="442" width="250" height="120" rx="10" fill="#21262d" stroke="#2ea043"/>
+    <text x="882" y="464" fill="#2ea043" font-weight="700">ASSEMBLY</text>
+    <text x="882" y="484" fill="#f0f6fc">ffmpeg (default, fast)</text>
+    <text x="882" y="502" fill="#f0f6fc">moviepy (hackable)</text>
+    <text x="882" y="526" fill="#8b949e">motion · joins · mix · mux</text>
+    <text x="882" y="544" fill="#8b949e">two-pass loudness, ducking</text>
+  </g>
+  <g stroke="#2ea043" stroke-width="1.6" marker-end="url(#arrG)">
+    <line x1="185" y1="386" x2="185" y2="438"/>
+    <line x1="455" y1="386" x2="455" y2="438"/>
+    <line x1="725" y1="386" x2="725" y2="438"/>
+    <line x1="995" y1="386" x2="995" y2="438"/>
+  </g>
+
+  <!-- config / env -->
+  <rect x="60" y="592" width="520" height="86" rx="10" fill="#21262d" stroke="#d29922"/>
+  <text x="76" y="616" fill="#d29922" font-weight="700" font-size="13">CONFIG LAYERS</text>
+  <text x="76" y="638" fill="#f0f6fc" font-size="12">config.yaml  →  project.json snapshot  →  --set key=value (per run)</text>
+  <text x="76" y="658" fill="#8b949e" font-size="12">secrets only by NAME from .env (keys never live in config)</text>
+  <rect x="600" y="592" width="520" height="86" rx="10" fill="#21262d" stroke="#d29922"/>
+  <text x="616" y="616" fill="#d29922" font-weight="700" font-size="13">MEMORY</text>
+  <text x="616" y="638" fill="#f0f6fc" font-size="12">manifest.json — hash of every input per artefact = skip or redo</text>
+  <text x="616" y="658" fill="#8b949e" font-size="12">script.json — the source of truth for scenes, timings, tempos</text>
+
+  <!-- workspace -->
+  <rect x="60" y="706" width="1060" height="120" rx="10" fill="#161b22" stroke="#30363d"/>
+  <text x="76" y="730" fill="#f0f6fc" font-weight="700" font-size="13">workspace/projects/&lt;your-video&gt;/</text>
+  <g font-size="12" fill="#8b949e">
+    <text x="76"  y="756">script.json</text><text x="76"  y="776" fill="#586069">scenes+timing</text>
+    <text x="200" y="756">audio/</text><text x="200" y="776" fill="#586069">per-scene wav + words/</text>
+    <text x="360" y="756">images/</text><text x="360" y="776" fill="#586069">one still per scene</text>
+    <text x="500" y="756">clips/</text><text x="500" y="776" fill="#586069">animated scenes</text>
+    <text x="630" y="756">subs/</text><text x="630" y="776" fill="#586069">.srt + .ass</text>
+    <text x="740" y="756">voice_full.wav / mix.wav</text><text x="740" y="776" fill="#586069">narration / master</text>
+    <text x="950" y="756" fill="#3fb950" font-weight="700">output/final.mp4</text><text x="950" y="776" fill="#586069">+ thumbnail + metadata</text>
+    <text x="76" y="806" fill="#586069">manifest.json · project.json · logs/ · tmp/</text>
+  </g>
+  <line x1="590" y1="678" x2="590" y2="702" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+
+  <text x="590" y="866" fill="#586069" font-size="12" text-anchor="middle">edit config.yaml to swap any green box · edit prompts/*.txt to change the writing voice · edit bot/filters.py to add a camera move</text>
+</svg>

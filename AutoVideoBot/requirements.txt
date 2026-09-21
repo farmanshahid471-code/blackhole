@@ -1,0 +1,54 @@
+# ============================================================================
+#  AutoVideoBot - Python dependencies
+# ============================================================================
+#  Install everything:   pip install -r requirements.txt
+#
+#  The packages below are split into tiers so you only install what you use.
+#  If you are a total beginner: just run the install command above, it is safe.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# TIER 1 - CORE (always needed)
+# ---------------------------------------------------------------------------
+requests>=2.31.0          # talks to every API (DeepSeek, image servers, etc.)
+PyYAML>=6.0               # reads config.yaml
+python-dotenv>=1.0.0      # reads .env (your secret API keys)
+Pillow>=10.0.0            # image resize / crop / inspect
+rich>=13.7.0              # pretty coloured terminal output + progress bars
+tqdm>=4.66.0              # simple progress bars (used by some providers)
+
+# ---------------------------------------------------------------------------
+# TIER 2 - AUDIO (voiceover + timing analysis)
+# ---------------------------------------------------------------------------
+edge-tts>=6.1.0           # FREE Microsoft neural voices, no API key needed
+pydub>=0.25.1             # easy audio duration / volume / concat
+
+# ---------------------------------------------------------------------------
+# TIER 3 - OPTIONAL LLM / TTS / IMAGE PROVIDERS
+#      (uncomment only the ones you actually use)
+# ---------------------------------------------------------------------------
+# openai>=1.30.0          # DeepSeek, Groq, OpenRouter, LM Studio, any OpenAI-compatible API
+# elevenlabs>=1.0.0       # ElevenLabs voice cloning (paid)
+# replicate>=0.25.0       # Replicate hosted FLUX / SDXL (paid per image)
+# vastai>=0.2.0           # Vast.ai CLI (renting cloud GPUs)
+# gradio_client>=1.0.0    # talk to any Gradio web-UI (Colab / Kaggle / HF Spaces)
+# librosa>=0.10.0         # advanced audio analysis (silence detection, tempo)
+# numpy>=1.20             # math helpers
+
+# ---------------------------------------------------------------------------
+# TIER 4 - OPTIONAL ASSEMBLY ENGINE
+# ---------------------------------------------------------------------------
+# The bot uses the ffmpeg command line by default (fastest, most reliable).
+# MoviePy is only needed if you set  assembly.engine: moviepy  in config.yaml
+# moviepy>=2.0.0
+# imageio-ffmpeg>=0.4.9   # bundles an ffmpeg binary if your PC has none
+
+# ---------------------------------------------------------------------------
+# NOTE ABOUT FFMPEG ITSELF
+# ---------------------------------------------------------------------------
+# ffmpeg is NOT a pip package - it is a program you install on your computer.
+#   Windows : download from https://www.gyan.dev/ffmpeg/builds/  (ffmpeg-release-essentials.zip)
+#             then add the "bin" folder to your PATH
+#   macOS   : brew install ffmpeg
+#   Linux   : sudo apt install ffmpeg
+# The bot will tell you if it cannot find ffmpeg.

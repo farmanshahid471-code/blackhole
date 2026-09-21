@@ -1,0 +1,73 @@
+# ============================================================================
+#  EXAMPLE SCRIPT - ready to feed the bot
+#
+#     python main.py run "black-holes" --script examples/black_holes_script.txt
+#
+#  Every feature of the script format is demonstrated here. Copy this file,
+#  delete the lines you do not need, and write your own video.
+# ============================================================================
+
+# ---- GLOBAL HEADER (all optional) -----------------------------------------
+#title: The Gravity Trap
+#description: Why nothing in the universe can escape a black hole, and what that does to time itself.
+#tags: space, black holes, physics, astronomy, science documentary
+#style: dark cinematic space photography, volumetric light, deep blacks, film grain
+#voice: en-US-ChristopherNeural
+#music: test-ambient-dark.mp3
+#aspect: 16x9
+
+# ---- SCENE 1 ----------------------------------------------------------------
+[00:00 - 00:11]
+Somewhere in this galaxy, a clock is running slower than yours. Not by a second. By centuries.
+@prompt: a supermassive black hole bending starlight, glowing orange accretion disk, deep space, wide shot
+@motion: zoom_in
+@title: The Slow Clock
+
+# ---- SCENE 2 ----------------------------------------------------------------
+[00:11 - 00:23]
+A black hole is not a hole at all. It is a place where gravity has crushed so much matter into so little space that the escape velocity passes the speed of light.
+@prompt: cross section of a collapsed star core, extreme density, warped spacetime grid lines, dramatic rim lighting
+@motion: pan_left_right
+@title: Not A Hole
+
+# ---- SCENE 3 ----------------------------------------------------------------
+[00:23 - 00:35]
+Cross the event horizon and the direction we call forward stops being a direction in space. It becomes a direction in time. You can no more turn around than you can turn back to yesterday.
+@prompt: glowing spherical event horizon boundary, distorted light rings, a tiny silhouette falling inward, cinematic
+@motion: ken_burns_combo
+@title: The Point Of No Return
+
+# ---- SCENE 4 ----------------------------------------------------------------
+[00:35 - 00:47]
+From the outside you would appear to freeze at the edge, reddening, dimming, never quite arriving. From the inside, you would not notice anything special at all.
+@prompt: two perspectives split by a horizon line, frozen red-shifted figure above, falling figure below, moody blue and orange
+@motion: zoom_out
+@title: Two Truths
+
+# ============================================================================
+#  OTHER FORMATS THE PARSER ALSO ACCEPTS (pick ONE style and stay consistent)
+# ============================================================================
+#
+#  STYLE 2 - one timestamp per line:
+#       0:47  And yet the hole keeps growing.
+#       0:55  Every star it eats makes the next one easier to catch.
+#
+#  STYLE 3 - arrows:
+#       00:47 -> 00:55 | And yet the hole keeps growing.
+#
+#  STYLE 4 - no timestamps at all (the bot measures the voice and decides):
+#       And yet the hole keeps growing.
+#       @prompt: a black hole swallowing a bright star, spiral of light
+#
+#  PER-SCENE DIRECTIVES:
+#       @prompt:   the image to draw
+#       @motion:   zoom_in | zoom_out | pan_left_right | pan_right_left |
+#                  pan_up_down | pan_down_up | zoom_in_slow | diagonal_tl_br |
+#                  diagonal_br_tl | ken_burns_combo | orbit | pulse | static
+#       @title:    chapter name
+#       @pause:    1.5              extra silence after this scene (seconds)
+#       @voice:    en-GB-RyanNeural a different narrator for this scene only
+#       @speed:    +8%              speak this scene faster
+#       @music:    tense.mp3        switch music from this scene onwards
+#       @skip:     true             leave this scene out of the video
+#       @subtitle: custom caption   override the auto captions for this scene

@@ -1,0 +1,35 @@
+Make a video script.
+
+TOPIC
+{topic}
+
+TARGET TOTAL LENGTH
+{duration} seconds
+
+HOW MANY SCENES
+About {scene_count} scenes. Each scene is one still image with a camera move
+over it, so a scene should be long enough to say one complete thought and
+short enough that the picture never gets stale. Between 4 and 20 seconds each.
+
+WORDS PER SCENE
+Between {min_words} and {max_words} words of narration. Aim for a speaking
+pace of roughly 150 words per minute, so a 10 second scene holds about
+25 words. Never exceed the maximum - the audio has to fit the timestamp.
+
+LANGUAGE
+{language}
+
+VISUAL STYLE FOR EVERY IMAGE
+{style}
+
+FRAME / ASPECT RATIO
+{aspect}  (compose every image prompt for this shape: keep the subject away
+from the very top and bottom edges, because captions will sit there)
+
+EXTRA INSTRUCTIONS FROM THE CREATOR
+{extra}
+
+Return ONLY the JSON object described in your instructions. Remember:
+contiguous timings starting at 0 and ending at {duration}, one hook in the
+first scene, a landing line in the final scene, and no scene repeating the
+previous scene's composition or camera move.

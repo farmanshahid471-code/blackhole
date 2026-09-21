@@ -1,0 +1,486 @@
+# ============================================================================
+#   AutoVideoBot  -  MASTER CONFIGURATION
+# ============================================================================
+#   HOW TO USE THIS FILE
+#   --------------------
+#   This is the "control panel" of the whole bot. You almost never need to
+#   touch Python code - you just change values here.
+#
+#   YAML RULES (important for beginners):
+#     * Spaces matter. NEVER use a TAB character. Use 2 spaces per level.
+#     * A line starting with # is a comment (ignored by the program).
+#     * true / false are lowercase.
+#     * Text with special characters should be in "double quotes".
+#
+#   HOW PROVIDER SWAPPING WORKS
+#   ---------------------------
+#   Every stage has a `provider:` line. Whatever name you type there is the
+#   module the bot loads. To switch from free cloud images to your own GPU,
+#   you change ONE word:
+#        provider: pollinations   ->   provider: vast
+#   Nothing else in the whole bot changes.
+# ============================================================================
+
+
+# ============================================================================
+# 1. VIDEO OUTPUT SETTINGS
+# ============================================================================
+video:
+  # "16x9"  = 1920x1080 landscape  (YouTube long-form documentaries)
+  # "9x16"  = 1080x1920 vertical    (Shorts / Reels / TikTok)
+  # "1x1"   = 1080x1080 square
+  aspect: "16x9"
+
+  # You can also force an exact size. Leave as null to use `aspect` above.
+  width: null
+  height: null
+
+  fps: 30                  # 30 = normal, 24 = cinematic, 60 = ultra smooth (2x slower to render)
+
+  # Quality of the final export. Higher number = better quality + bigger file.
+  # 18 = very high quality, 23 = standard, 28 = small file for testing
+  crf: 20
+  preset: "medium"         # ultrafast | superfast | veryfast | faster | fast | medium | slow | slower
+                           # "ultrafast" renders 5x quicker but files are 2x bigger.
+                           # Use "ultrafast" while testing, "medium" for the final upload.
+
+  codec: "h264"            # h264 = plays everywhere (use this)
+                           # h265 = smaller files, slower encode, some players complain
+
+
+# ============================================================================
+# 2. LLM  -  writes the script, the image prompts, titles and description
+# ============================================================================
+#   OPTIONS:  deepseek | openai_compat | ollama | manual
+#     deepseek      -> DeepSeek official API (recommended, very cheap)
+#     openai_compat -> ANY OpenAI-style API: Groq, OpenRouter, Together, LM Studio
+#     ollama        -> 100% free, runs offline on your own PC
+#     manual        -> NO AI at all. You supply your own script file.
+# ============================================================================
+llm:
+  provider: "deepseek"
+
+  deepseek:
+    base_url_env: "DEEPSEEK_BASE_URL"     # read from .env (default https://api.deepseek.com)
+    api_key_env: "DEEPSEEK_API_KEY"
+    model: "deepseek-chat"                # or "deepseek-reasoner" for harder topics
+    temperature: 0.8                      # 0 = robotic/predictable, 1 = creative/wild
+    max_tokens: 4096
+    timeout: 120
+    retries: 3
+
+  openai_compat:
+    base_url_env: "OPENAI_BASE_URL"
+    api_key_env: "OPENAI_API_KEY"
+    model_env: "OPENAI_MODEL"
+    temperature: 0.8
+    max_tokens: 4096
+
+  ollama:
+    base_url_env: "OLLAMA_BASE_URL"
+    model_env: "OLLAMA_MODEL"
+    temperature: 0.8
+
+  # How the bot asks the LLM to write. Edit the .txt files in prompts/ to change.
+  prompt_files:
+    system: "prompts/script_system.txt"
+    user: "prompts/script_user.txt"
+    image_polish: "prompts/image_polish.txt"
+    metadata: "prompts/metadata.txt"
+
+  # Rules the bot passes to the LLM
+  scenes:
+    target_seconds_per_scene: 9           # how long each scene should be
+    min_words_per_scene: 18               # keeps narration from being too sparse
+    max_words_per_scene: 42               # keeps narration from being too dense
+    language: "English"                   # "English", "Urdu", "Hindi", "Spanish"...
+
+
+# ============================================================================
+# 3. IMAGE GENERATION  -  the visuals
+# ============================================================================
+#   OPTIONS:  pollinations | sdwebui | vast | colab | kaggle | gradio | replicate
+#
+#     pollinations -> FREE, no GPU, no key, no setup. Works in 5 seconds.
+#                     Quality is decent. Best for testing the whole pipeline.
+#     sdwebui      -> Any Stable Diffusion WebUI (AUTOMATIC1111 / Forge)
+#                     running on your PC, Colab, Vast.ai or Kaggle.
+#     vast         -> Bot RENTS, BOOTS, USES and SHUTS DOWN a Vast.ai GPU
+#                     automatically so you only pay for the minutes used.
+#     colab        -> You run the free Colab notebook, it gives you a public
+#                     link, the bot posts prompts to that link.
+#     kaggle       -> Kaggle cannot host a live server, so the bot WRITES a
+#                     notebook with your prompts baked in; you run it and the
+#                     bot unzips the downloaded images.
+#     gradio       -> Talk to ANY Gradio app link (Hugging Face Spaces too).
+#     replicate    -> Paid per image, zero GPU management, very high quality.
+# ============================================================================
+image:
+  provider: "pollinations"
+
+  # ---- shared by every provider ----
+  width: 1920              # generate at this size (bot upscales if needed)
+  height: 1080
+  steps: 30                # more steps = better detail + slower (20-50 is the sane range)
+  cfg: 7.0                 # how strictly the AI follows your prompt (5-9 normal)
+  sampler: "DPM++ 2M Karras"
+  negative_prompt: "text, watermark, logo, signature, letters, words, captions, blurry, low quality, deformed, extra limbs, bad anatomy, jpeg artifacts, oversaturated, duplicate"
+  style_suffix: "cinematic lighting, ultra detailed, dramatic atmosphere, 8k, professional photography, film grain"
+  seed_mode: "random"      # random = every image different | fixed = reproducible
+  batch_retries: 3         # if an image fails, try again this many times
+
+  # ---- FREE web service (zero setup) ----
+  pollinations:
+    model: "flux"          # flux | turbo
+    endpoint: "https://image.pollinations.ai/prompt/{prompt}"
+    upscale: true
+    nologo: true
+    delay_seconds: 1.5     # be polite, avoid rate limits
+
+  # ---- Stable Diffusion WebUI (AUTOMATIC1111 / Forge / sd-next) ----
+  sdwebui:
+    url_env: "SDWEBUI_URL"           # http://127.0.0.1:7860 by default
+    model: ""                        # "" = use whatever is loaded. e.g. "juggernautXL_v9.safetensors"
+    api_path: "/sdapi/v1/txt2img"
+    hires_fix: false                 # 2-pass upscale inside SD (slower, sharper)
+    hires_scale: 1.5
+    timeout: 600
+
+  # ---- Vast.ai (auto rent + auto shutdown = you pay cents) ----
+  vast:
+    api_key_env: "VAST_API_KEY"
+    # -- How to get the GPU. Pick ONE: --
+    # "existing" = you already created an instance in the Vast.ai website, put its ID below
+    # "search"   = the bot searches for the cheapest machine matching your needs, creates it, uses it, destroys it
+    mode: "search"
+    instance_id: null
+    # -- only used when mode: "search" --
+    search:
+      gpu_type: "RTX 4090"           # RTX 4090 | RTX 3090 | A5000 | RTX 4080
+      min_vram_gb: 16
+      max_price_per_hour: 0.50
+      disk_gb: 32
+      image: "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
+      region: ""                     # "" = anywhere. e.g. "us-west"
+    # -- the server that runs ON the gpu --
+    server_dir: "deploy/vast/server" # uploaded to the instance automatically
+    server_port: 7860
+    server_start_cmd: "bash start_server.sh"
+    boot_timeout: 600                # seconds to wait for the machine to wake up
+    destroy_after_use: true          # true = stop paying the moment rendering is done
+    keep_alive_ping: 30              # seconds between "are you still there?" pings
+
+  # ---- Google Colab (free T4 GPU) ----
+  colab:
+    # Paste the public link printed by deploy/colab/colab_image_server.ipynb
+    endpoint_env: "IMAGE_ENDPOINT_URL"
+    endpoint: ""                     # or hardcode it here: "https://xxxx.ngrok-free.app"
+    api_path: "/generate"
+    timeout: 300
+    keepalive_seconds: 25            # pings so Colab does not go to sleep
+    ngrok_header: ""                 # if you use ngrok free, put your authtoken header value
+
+  # ---- Kaggle (free P100/T4, 30h per week) ----
+  kaggle:
+    notebook_template: "deploy/kaggle/kaggle_batch_template.ipynb"
+    output_dir: "workspace/kaggle_out"    # put the kaggle .zip download here
+    username_env: "KAGGLE_USERNAME"
+    key_env: "KAGGLE_KEY"
+
+  # ---- Generic Gradio app (Colab, Kaggle, Hugging Face Space) ----
+  gradio:
+    endpoint_env: "IMAGE_ENDPOINT_URL"
+    endpoint: ""
+    api_name: "/predict"
+
+  # ---- Replicate (paid, no GPU management, best quality per dollar of effort) ----
+  replicate:
+    model: "black-forest-labs/flux-schnell"
+    api_token_env: "REPLICATE_API_TOKEN"
+
+
+# ============================================================================
+# 4. VOICEOVER (TTS)
+# ============================================================================
+#   OPTIONS:  edge | voicestudio | elevenlabs | openai_tts | piper | espeak
+#
+#     edge       -> FREE Microsoft Azure neural voices. No key. No limit.
+#                   Also gives WORD-LEVEL TIMESTAMPS -> perfect subtitles.
+#     voicestudio-> https://github.com/debpalash/VoiceStudio  (self hosted API)
+#     elevenlabs -> Best quality, voice cloning, paid.
+#     openai_tts -> Simple, good quality, paid.
+#     piper      -> 100% offline, runs on a Raspberry Pi, robot-ish but free.
+#     espeak     -> Last-resort offline fallback (very robotic).
+# ============================================================================
+tts:
+  provider: "edge"
+
+  # Speed / pitch of the voice.  "+0%" is normal, "+10%" is faster.
+  rate: "+0%"
+  pitch: "+0Hz"
+  volume: "+0%"
+  audio_format: "wav"          # wav = best quality for editing | mp3 = smaller
+  sample_rate: 24000           # 24000 is what Edge-TTS natively outputs
+  head_silence_ms: 150         # silence inserted BEFORE each scene's speech
+  tail_silence_ms: 450         # silence inserted AFTER each scene's speech (breathing room)
+
+  edge:
+    # Full voice list: run   python -m edge_tts --list-voices
+    # Popular documentary voices:
+    #   en-US-GuyNeural        (deep male, best for docs)
+    #   en-US-ChristopherNeural(male, warmer)
+    #   en-US-AriaNeural       (female, clear)
+    #   en-US-JennyNeural      (female, friendly)
+    #   en-GB-RyanNeural       (British male)
+    #   en-IN-PrabhatNeural    (Indian male)
+    voice: "en-US-GuyNeural"
+
+  voicestudio:
+    url_env: "VOICESTUDIO_URL"         # http://localhost:3900
+    voice_env: "VOICESTUDIO_VOICE"
+    # If your VoiceStudio build uses different route names, change them here.
+    api_path: "/api/tts"
+    method: "POST"
+    json_body:                          # {text}/{voice}/{rate} are replaced automatically
+      text: "{text}"
+      voice: "{voice}"
+      speed: 1.0
+    response_field: "audio"            # name of the field holding audio/base64/url
+    timeout: 300
+
+  elevenlabs:
+    api_key_env: "ELEVENLABS_API_KEY"
+    voice_id_env: "ELEVENLABS_VOICE_ID"
+    model_id: "eleven_multilingual_v2"
+    stability: 0.45
+    similarity_boost: 0.80
+    style: 0.35
+    output_format: "mp3_44100_128"
+
+  openai_tts:
+    api_key_env: "OPENAI_API_KEY"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini-tts"
+    voice_env: "OPENAI_TTS_VOICE"      # alloy | echo | fable | onyx | nova | shimmer
+
+  piper:
+    binary: "piper"                    # must be on PATH
+    voice_model: "en_US-lessac-medium.onnx"
+
+
+# ============================================================================
+# 5. TIMING  -  making audio and visuals agree
+# ============================================================================
+timing:
+  # When YOU give timestamps in your script, the audio must fit them exactly.
+  # The bot measures the natural speech length and speeds it up / slows it down.
+  fit_to_timestamps: true
+  min_duration: 2.0        # a scene is never shorter than this (seconds)
+  max_duration: 30.0       # a scene is never longer than this (splits are safer)
+  default_scene_seconds: 6 # used if a scene has no audio and no timestamp
+
+  # Time-stretch limits. atempo only accepts 0.5-2.0 per filter, the bot chains
+  # them automatically. These values protect voice quality:
+  max_speedup: 1.35        # never speed the voice up more than 35%
+  max_slowdown: 0.85       # never slow the voice down more than 15%
+  # If the timestamp window is still not filled after max stretch, the bot pads
+  # with silence (extend_tail) or trims the extra (trim).
+  overflow_strategy: "pad_then_hold"   # pad_then_hold | trim | split_scene
+
+  analyze:
+    engine: "ffmpeg"       # ffmpeg (no extra install) | pydub | librosa
+    detect_silence: true
+    silence_threshold_db: -45
+
+
+# ============================================================================
+# 6. MOTION  -  Ken Burns pan/zoom on still images ($0 animation)
+# ============================================================================
+motion:
+  engine: "ffmpeg"         # ffmpeg (fast, recommended) | moviepy (pythonic, slower)
+
+  # Every scene gets a motion. "auto" cycles through the list below so a video
+  # never repeats the same movement twice in a row.
+  preset: "auto"
+
+  # Zoom strength. 1.00 = no zoom. 1.12 = zooms in 12% over the scene.
+  zoom_amount: 1.12
+
+  # How strong the pan is, as a fraction of the image width.
+  pan_amount: 0.10
+
+  # Order used when preset: "auto"
+  auto_order:
+    - zoom_in
+    - pan_left_right
+    - zoom_out
+    - pan_right_left
+    - zoom_in_slow
+    - pan_up_down
+    - diagonal_tl_br
+    - diagonal_br_tl
+    - ken_burns_combo
+    - static
+
+  # Focal point bias: where the zoom aims. "center" is safest for AI images.
+  focus: "center"          # center | top | bottom | left | right | rule_of_thirds
+
+  # SUPER-SAMPLING - the smoothness/memory trade-off.
+  # The still image is blown up by this factor before the moving crop is taken,
+  # so the crop can move in fractions of a pixel. Bigger = smoother motion,
+  # but memory use grows with the SQUARE of this number.
+  #   auto = measure this machine's RAM and pick the best safe value
+  #   2    = safe everywhere (recommended if you have 8 GB RAM or less)
+  #   3    = good on 16 GB
+  #   6    = maximum smoothness, needs 32 GB+ for 1080p
+  supersample: "auto"
+
+  # Small random jitter (handheld camera feel). 0 = perfectly smooth.
+  shake: 0.0
+
+  # Extra polish
+  add_vignette: true        # darkens the corners, very "documentary"
+  vignette_strength: 0.35
+  add_film_grain: false     # noise overlay, costs render time
+  color_grade: "cinematic"  # none | cinematic | warm | cool | noir | vivid
+
+  # How each scene starts/ends (fade in from black / fade out to black)
+  scene_fade_seconds: 0.0   # 0 = no per-scene fade (transitions handle it)
+
+
+# ============================================================================
+# 7. TRANSITIONS between scenes
+# ============================================================================
+transitions:
+  enabled: true
+  type: "crossfade"        # crossfade | cut | fade_black | slide_left | wipe
+  duration: 0.45           # seconds of overlap. Keep under 1.0 or it feels slow.
+  # IMPORTANT: with crossfade, each scene is stretched slightly so the total
+  # video length still matches your timestamps exactly. The bot handles this.
+  vary: true               # randomly pick between a few tasteful transitions
+
+
+# ============================================================================
+# 8. AUDIO MIX  -  voice + music + mastering
+# ============================================================================
+audio:
+  music:
+    enabled: true
+    folder: "assets/background_music"
+    # How to pick a track
+    mode: "random"         # random | first | match_mood (asks the LLM) | filename
+    filename: ""           # used when mode: "filename" (relative to folder)
+    volume_db: -19.0       # music level under the voice. -19 is a good start.
+    fade_in_seconds: 1.5
+    fade_out_seconds: 3.0
+    loop: true             # repeat the track if the video is longer than it
+
+    # "Ducking": the music automatically gets quieter whenever someone speaks.
+    ducking: true
+    duck_ratio: 8          # how hard it ducks (higher = more aggressive)
+    duck_attack_ms: 25
+    duck_release_ms: 450
+
+  voice:
+    normalize: true        # makes every scene the same loudness
+    target_loudness_lufs: -16.0   # -16 = YouTube standard, -14 = louder
+    denoise: false         # light noise reduction (can make voice sound watery)
+    compressor: true       # evens out loud and quiet syllables
+    eq: "broadcast"        # none | broadcast (adds body + clarity)
+
+  # Master chain applied to the final mix
+  master:
+    limiter: true
+    loudnorm: true
+    fade_out_seconds: 1.0
+
+
+# ============================================================================
+# 9. SUBTITLES / CAPTIONS
+# ============================================================================
+subtitles:
+  enabled: true
+  burn_in: true            # true = burned into the video (always visible)
+                           # false = only a .srt file is written next to the mp4
+  source: "word_boundaries" # word_boundaries (needs edge TTS) | scene_split | none
+
+  words_per_line: 4        # for Shorts-style word-by-word captions
+  max_chars_per_line: 42   # for normal documentary subtitles
+  max_lines: 2
+
+  # Styling (ASS format: &HAABBGGRR  -> alpha, blue, green, red, in HEX)
+  style:
+    font: "DejaVu Sans"    # change to "Montserrat" / "Arial Black" if installed
+    font_size: 52          # for 1080p. Bot auto-scales for vertical video.
+    bold: true
+    primary_colour: "&H00FFFFFF"     # white text
+    outline_colour: "&H00000000"     # black outline
+    back_colour: "&H80000000"        # semi-transparent black box
+    outline: 3
+    shadow: 1
+    margin_v: 90           # distance from the bottom edge
+    alignment: 2           # 2 = bottom center, 8 = top center
+
+  # Shorts / Reels "karaoke" pop style (one word at a time, big)
+  shorts_style:
+    enabled: false
+    font_size: 110
+    highlight_colour: "&H0000D7FF"   # the active word turns this colour
+
+
+# ============================================================================
+# 10. EXTRAS  -  thumbnail, YouTube metadata, watermark
+# ============================================================================
+extras:
+  thumbnail:
+    enabled: true
+    strategy: "best_scene"   # best_scene | at_time | scene_index
+    at_seconds: 3.0
+    scene_index: 0
+    # Add a big title over the thumbnail
+    add_title_text: false
+    title_max_words: 5
+
+  metadata:
+    enabled: true            # asks the LLM for title, description, tags, chapters
+    output_file: "youtube_metadata.json"
+
+  watermark:
+    enabled: false
+    image: "assets/watermark.png"   # transparent PNG
+    position: "bottom_right"        # top_left|top_right|bottom_left|bottom_right|center
+    opacity: 0.55
+    scale: 0.12                     # fraction of video width
+
+  intro_outro:
+    enabled: false
+    intro_video: "assets/intro.mp4"
+    outro_video: "assets/outro.mp4"
+
+
+# ============================================================================
+# 11. ENGINE / SYSTEM
+# ============================================================================
+system:
+  ffmpeg_bin: "ffmpeg"       # or a full path: "C:/ffmpeg/bin/ffmpeg.exe"
+  ffprobe_bin: "ffprobe"
+  threads: 0                 # 0 = let ffmpeg decide (usually all cores)
+
+  # ---- MEMORY PROTECTION (read this if ffmpeg keeps getting "Killed") ----
+  # x264's defaults allocate ~1.5 threads per core and 40 frames of lookahead
+  # buffer PER THREAD. On 1080p that is over a gigabyte of RAM, and on a small
+  # PC the operating system simply kills ffmpeg with no error message at all
+  # (exit code -9). These two settings cap it.
+  # The bot also retries automatically at ultrafast/2-threads if it is killed.
+  encode_threads: 4          # 2 on a machine with 8 GB RAM or less, 8 on a workstation
+  encode_lookahead: 20       # frames of x264 buffer. 40 = default, 20 = half the RAM
+  temp_dir: "workspace/tmp"
+  projects_dir: "workspace/projects"
+  log_level: "INFO"          # DEBUG shows every ffmpeg command (great for learning)
+  keep_intermediate_files: true   # false = delete clips after final export (saves disk)
+  parallel_scenes: 1         # render this many scenes at once.
+                             # 1 = safest (ffmpeg already uses all your cores).
+                             # Raise to 2-4 ONLY if you have lots of RAM and a
+                             # big CPU, and you have set motion.supersample low.
+  retry_attempts: 3
+  on_error: "continue"       # continue = skip broken scene | abort = stop the whole run
