@@ -351,14 +351,16 @@ if "!STARTCHOICE!"=="1" (
 
 if "!STARTCHOICE!"=="2" (
   echo.
-  echo    Tips to get going:
-  echo      main.py doctor
-  echo      main.py test
-  echo      main.py run "my video" --script examples\black_holes_script.txt
+  echo    Tips to get going ^(type these without the "python" part if you like,
+  echo    but python main.py ... always works^):
+  echo      python main.py doctor
+  echo      python main.py test
+  echo      python main.py run "my video" --script examples\black_holes_script.txt
   echo.
   "%VPY%" main.py --help
   echo.
-  cmd /k "cd /d "%CD%" && "%VENV%\Scripts\activate.bat""
+  REM keep a shell open with the environment already activated
+  cmd /k "%VENV%\Scripts\activate.bat"
   goto :done
 )
 

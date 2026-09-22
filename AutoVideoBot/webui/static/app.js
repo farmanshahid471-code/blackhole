@@ -481,8 +481,6 @@ function offerOfflineSelfTest() {
 }
 
 async function runDoctor() {
-
-async function runDoctor() {
   try {
     const res = await api('/api/doctor', { method: 'POST', body: JSON.stringify({}) });
     go('create');

@@ -1,0 +1,18 @@
+# ============================================================================
+#  Line endings, so the project behaves the same on every machine.
+#
+#  Windows batch files MUST use CRLF: cmd.exe can mis-parse LF-only .bat files
+#  (labels and bracketed blocks especially), and a broken installer is the
+#  worst possible first impression.
+#
+#  Everything else stays LF so the same file works on macOS/Linux and in
+#  notebooks.
+# ============================================================================
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh  text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.ipynb text eol=lf

@@ -39,19 +39,21 @@ if not exist "%VPY%" (
 REM activate the environment for this window
 call "%VENV%\Scripts\activate.bat"
 
-echo    Ready. Popular commands:
+echo    Ready - the bot's environment is already active in this window.
 echo.
-echo      main.py doctor                                       check everything
-echo      main.py test                                         tiny 8-second video
-echo      main.py run "my video" --topic "black holes" --duration 120
-echo      main.py run "my video" --script examples\black_holes_script.txt
-echo      main.py web                                          the point-and-click UI
-echo      main.py providers                                    tools you can swap
-echo      main.py inspect "my video"                           what got built
+echo    Popular commands:
+echo.
+echo      python main.py doctor                                check everything
+echo      python main.py test                                  tiny 8-second video
+echo      python main.py run "my video" --topic "black holes" --duration 120
+echo      python main.py run "my video" --script examples\black_holes_script.txt
+echo      python main.py web                                   the point-and-click UI
+echo      python main.py providers                             tools you can swap
+echo      python main.py inspect "my video"                    what got built
 echo.
 echo    Your videos appear in:  workspace\projects\^<name^>\output\final.mp4
 echo.
-echo    Type  main.py --help  for the full list.
+echo    Type  python main.py --help  for the full list.
 echo.
 echo  ==========================================================================
 echo.
