@@ -489,6 +489,7 @@ def cmd_test(args) -> int:
         encoding="utf-8",
     )
     p = Pipeline(cfg, proj)
+    p.force = bool(getattr(args, "force", False))
     t0 = time.time()
     out = p.run_all(script_file=script)
     log("")
@@ -513,6 +514,29 @@ def cmd_prompts(args) -> int:
         if not args.full and len(text) > 700:
             log("  [dim]... (use --full to see the whole file)[/]")
     log("\n[dim]Edit these files to change how the AI writes. No Python knowledge needed.[/]")
+    return 0
+
+
+# ===========================================================================
+# COMMAND: web UI
+# ===========================================================================
+def cmd_web(args) -> int:
+    """
+    Start the point-and-click interface in your browser.
+
+    The server runs on THIS computer only by default (127.0.0.1), so nothing
+    is exposed to the internet. Pass --host 0.0.0.0 if you deliberately want
+    to reach it from your phone on the same wifi.
+    """
+    try:
+        from webui.server import main as serve
+    except ImportError as e:
+        warn(f"the web UI could not start: {e}")
+        log("\n[bold]Fix:[/] the web interface needs two extra packages:")
+        log("   pip install fastapi \"uvicorn[standard]\" python-multipart")
+        log("   (or just run the installer again:  scripts/install_windows.bat)")
+        return 1
+    serve(host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 
 
@@ -630,13 +654,26 @@ RE-DO ONE STEP ONLY
     sp = sub.add_parser("test", help="render a tiny 8-second video to verify everything")
     sp.add_argument("project", nargs="?", default="selftest")
     sp.add_argument("--image", help="image provider to test (default: whatever config says)")
-    sp.add_argument("--tts", help="tts provider to test")
+    sp.add_argument("--tts", help="tts provider to test "
+                                  "(try  --tts test  for a fully offline check)")
+    sp.add_argument("--force", action="store_true",
+                    help="ignore the cache and rebuild the test video from scratch")
     sp.add_argument("--set", action="append", default=[])
     sp.set_defaults(func=cmd_test)
 
     sp = sub.add_parser("prompts", help="show the LLM prompt templates you can edit")
     sp.add_argument("--full", action="store_true")
     sp.set_defaults(func=cmd_prompts)
+
+    # ---- the web UI -----------------------------------------------------
+    sp = sub.add_parser("web", help="open the point-and-click web interface")
+    sp.add_argument("--port", type=int, default=8765, help="port (default 8765)")
+    sp.add_argument("--host", default="127.0.0.1",
+                    help="127.0.0.1 = only this computer (default); "
+                         "0.0.0.0 = also reachable from your phone on the same wifi")
+    sp.add_argument("--no-browser", action="store_true",
+                    help="do not open a browser window automatically")
+    sp.set_defaults(func=cmd_web)
 
     return ap
 

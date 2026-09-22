@@ -36,6 +36,7 @@ word in config.yaml and the whole pipeline follows.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import random
@@ -484,8 +485,15 @@ class Pipeline:
             warn(f"image provider says: {msg}")
             if str(self.cfg.get("system.on_error", "continue")) == "abort":
                 die("aborting because system.on_error is 'abort'")
-        else:
-            ok(msg)
+            # The provider has already told us it cannot work right now - no
+            # internet, no GPU, an expired tunnel. Retrying every scene five
+            # times with growing pauses would turn a 30-second run into a
+            # 10-minute one and change nothing, so: one attempt each, then the
+            # scene falls back to its placeholder card. Set
+            # image.batch_retries yourself if you want the slow version.
+            if int(self.cfg.get("image.batch_retries", 3) or 3) > 1:
+                self.cfg.set("image.batch_retries", 1)
+                info("  (provider is unreachable: one attempt per scene from now on)")
 
         icfg = self.cfg.section("image")
         w, h = self.cfg.resolution()
@@ -1038,17 +1046,35 @@ class Pipeline:
         llm_name = str(self.cfg.get("llm.provider", "")).lower()
         if llm_name in ("manual", "none", ""):
             return base
+        # IMPORTANT: providers call die() when they are not configured, and
+        # die() raises SystemExit. Without the guard below, a missing API key
+        # would print a full "how to fix this" essay in the middle of a
+        # successful build and - worse - `except Exception` would not catch
+        # it. Metadata is a nice-to-have, never a reason to frighten anyone.
+        # The provider's noisy setup message is also silenced here, because a
+        # clean one-line fallback note is what a user deserves.
+        import contextlib as _ctx
+        # Everything below runs with stdout captured, because providers explain
+        # themselves at length when they are not configured ("here is where to
+        # get a key, and here is what to put in .env..."). That speech is
+        # genuinely helpful when you asked for it and pure noise when it lands
+        # in the middle of an otherwise successful build. We keep the meaning
+        # and drop the volume: one calm line, printed by the except block.
+        noise = io.StringIO()
         try:
-            from .script import load_prompt_file
-            llm = self.provider("llm", llm_name)
-            tpl = load_prompt_file(self.cfg.get("llm.prompt_files.metadata", "prompts/metadata.txt"))
-            prompt = (tpl
-                      .replace("{title}", str(base["title"]))
-                      .replace("{duration}", str(base["duration"]))
-                      .replace("{scenes}", json.dumps(
-                          [{"t": s.get("start"), "text": (s.get("narration") or "")[:160]}
-                           for s in self.scenes], ensure_ascii=False)))
-            raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.7)
+            with _ctx.redirect_stdout(noise), _ctx.redirect_stderr(noise):
+                from .script import load_prompt_file
+                llm = self.provider("llm", llm_name)
+                tpl = load_prompt_file(
+                    self.cfg.get("llm.prompt_files.metadata", "prompts/metadata.txt"))
+                prompt = (tpl
+                          .replace("{title}", str(base["title"]))
+                          .replace("{duration}", str(base["duration"]))
+                          .replace("{scenes}", json.dumps(
+                              [{"t": s.get("start"), "text": (s.get("narration") or "")[:160]}
+                               for s in self.scenes], ensure_ascii=False)))
+                raw = llm.chat([{"role": "user", "content": prompt}],
+                               json_mode=True, temperature=0.7)
             data = json.loads(raw) if raw.strip().startswith("{") else extract_json_local(raw)
             if isinstance(data, dict):
                 base["title"] = str(data.get("title") or base["title"])[:100]
@@ -1056,8 +1082,13 @@ class Pipeline:
                 base["tags"] = [str(t)[:30] for t in (data.get("tags") or base["tags"])][:25]
                 base["hashtags"] = [str(h) for h in (data.get("hashtags") or [])][:6]
                 base["generated_by"] = llm_name
-        except Exception as e:
-            warn(f"metadata generation failed ({str(e)[:140]}) - using the plain title")
+        except (Exception, SystemExit) as e:
+            # A missing key is the normal state on a first run, so say it once,
+            # calmly, and carry on with the title and description already in
+            # the script. Metadata is never a reason to frighten anyone.
+            why = "no LLM configured" if isinstance(e, SystemExit) else str(e)[:120]
+            info(f"YouTube metadata written from your script "
+                 f"(title, chapters, description) - {why}")
         return base
 
     # ==================================================================

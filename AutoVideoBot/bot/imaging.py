@@ -232,3 +232,66 @@ def contact_sheet(images: list[Path], out_path: Path, *, cols: int = 4,
         sheet.paste(t, ((i % cols) * thumb_w, (i // cols) * thumb_h))
     sheet.save(out_path, quality=88)
     return out_path
+
+
+# ===========================================================================
+# SAVING DOWNLOADED IMAGE BYTES
+# ===========================================================================
+def save_image_atomic(data: bytes, out_path: Path) -> Path:
+    """
+    Save raw bytes that came back from an API (a JPEG, PNG or WebP) safely.
+
+    WHY THIS IS ITS OWN FUNCTION
+    ---------------------------
+    Three things go wrong constantly when saving AI images, and each one is
+    handled here:
+
+      1. the bytes are PNG but the file is named .jpg (or the other way round)
+         -> Pillow is used to convert when they disagree
+      2. the download was cut off and the bytes are not a complete image
+         -> we raise a clear error instead of writing a corrupt file
+      3. the file is half-written when the program crashes
+         -> we write to <name>.part first and rename at the very end, and a
+            rename inside one disk is atomic: the .jpg either exists complete
+            or does not exist at all. Never a broken image in the cache.
+
+    Also normalises everything to RGB, because Stable Diffusion loves to hand
+    back RGBA / palette / grayscale images and ffmpeg is happiest with plain RGB.
+    """
+    import io
+    from PIL import Image
+
+    out_path = Path(out_path)
+    ensure_dir(out_path.parent)
+    tmp = out_path.with_suffix(out_path.suffix + ".part")
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()                       # forces the decode, so truncation is caught here
+    except Exception as e:
+        raise RuntimeError(
+            f"the image service did not return a usable picture "
+            f"({len(data)} bytes read: {e})"
+        ) from e
+
+    if img.mode != "RGB":
+        # flatten transparency onto black so JPEG has something to write
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, (0, 0, 0))
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
+        else:
+            img = img.convert("RGB")
+
+    if out_path.suffix.lower() in (".jpg", ".jpeg"):
+        img.save(tmp, format="JPEG", quality=94)
+    elif out_path.suffix.lower() == ".png":
+        img.save(tmp, format="PNG")
+    elif out_path.suffix.lower() == ".webp":
+        img.save(tmp, format="WEBP", quality=94)
+    else:                                   # unknown extension -> write PNG bytes
+        img.save(tmp, format="PNG")
+
+    tmp.replace(out_path)
+    return out_path

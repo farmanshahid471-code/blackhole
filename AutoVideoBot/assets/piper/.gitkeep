@@ -1,0 +1,2 @@
+Piper voice models go in this folder (the .onnx file AND its .onnx.json).
+Get free voices here: https://huggingface.co/rhasspy/piper-voices

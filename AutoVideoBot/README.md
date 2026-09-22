@@ -25,16 +25,50 @@ Built exactly around this stack (every line is a hot-swappable provider):
 
 ## 30-second start (zero money, zero accounts)
 
-```bash
-# 1. install
-./scripts/setup.sh                 # Windows: scripts\setup.bat
+### Windows - double-click, no commands at all
 
-# 2. make a video right now - no API keys needed at all
-python main.py run "my-first-video" --topic "why the ocean is deep" --duration 60
-
-# 3. watch it
-#    workspace/projects/my-first-video/output/final.mp4
 ```
+1.  INSTALL-WINDOWS.bat     <- sets everything up, downloads what is missing
+2.  START-WINDOWS.bat       <- opens the point-and-click web interface
+```
+
+That is the whole installation. The installer finds or installs Python, creates
+a private environment inside this folder, downloads the libraries **and a
+complete copy of FFmpeg**, makes your `.env` file, runs the health check and
+then opens the browser. Nothing is installed system-wide, so deleting this
+folder uninstalls it completely.
+
+In the interface: **Create a video** -> press **Load the example** -> **Build**.
+You will have a finished `final.mp4` on screen in a few minutes, with no
+account, no API key and no cost.
+
+### macOS / Linux
+
+```bash
+bash START-WEB.sh          # installs what is missing, opens the browser
+```
+
+### Prefer the command line?
+
+```bash
+./scripts/setup.sh                 # Windows: scripts\setup.bat
+python main.py test                # builds a tiny 8-second video to prove it works
+python main.py run "my-first-video" --script examples/black_holes_script.txt
+# watch it -> workspace/projects/my-first-video/output/final.mp4
+```
+
+### What the web interface gives you
+
+| Screen | What it is for |
+|---|---|
+| Dashboard | Health check, the 8-second self-test, active providers, recent builds |
+| Create a video | Paste a script (or give a topic), pick quality/shape/voice, watch the **live log** |
+| My videos | Play, download, inspect every scene, rebuild one stage, clean or delete |
+| Providers | All 20 tools with a **Test** button, and one-click switching |
+| Settings & keys | Paste API keys, edit common settings, upload music / watermark / fonts |
+| Help | The 5-minute guide, the full script format, troubleshooting, costs |
+
+Full documentation: [`docs/14-WEB-UI.md`](docs/14-WEB-UI.md).
 
 ## Start with YOUR script (the mode you asked for)
 
@@ -78,10 +112,31 @@ python main.py run "vid" --script s.txt --set image.provider=vast
 | [docs/11-TROUBLESHOOTING.md](docs/11-TROUBLESHOOTING.md) | Every error you will ever see, and the fix |
 | [docs/12-EXTENDING.md](docs/12-EXTENDING.md) | Add your own provider in ~40 lines |
 | [docs/13-COSTS.md](docs/13-COSTS.md) | What each path costs per finished video |
+| [docs/14-WEB-UI.md](docs/14-WEB-UI.md) | **The point-and-click interface:** every screen, every button, troubleshooting |
+
+## Files in the top folder (what each one is for)
+
+| File | What it does |
+|---|---|
+| `INSTALL-WINDOWS.bat` | **Windows installer.** Finds/installs Python, downloads the libraries and FFmpeg, creates `.env`, runs the health check. Safe to re-run any time to repair or update. |
+| `START-WINDOWS.bat` | **Windows launcher.** Opens the web interface (and installs anything missing first). |
+| `START-CONSOLE.bat` | Opens a terminal with the bot's environment already activated - for people who prefer typing commands. |
+| `START-WEB.sh` | The same launcher for macOS / Linux. |
+| `main.py` | The bot itself. Every command starts here. |
+| `config.yaml` | Your control panel - providers, quality, motion, music, captions. Heavily commented. |
+| `.env` | Your API keys (created from `.env.example`). Never share this file. |
+| `bot/` | The code: 10 pipeline stages, 20 providers, ffmpeg filters. |
+| `webui/` | The web interface (server + page, no build step needed). |
+| `deploy/` | Ready-to-run GPU notebooks: Colab, Kaggle, and the Vast.ai server. |
+| `assets/` | Your background music, watermark, fonts, Piper voices. |
+| `prompts/` | The editable instructions the LLM follows. Rewrite them to change the bot's writing style. |
+| `workspace/projects/` | **Your videos live here.** Each one keeps its own images, audio, clips and cache. |
+| `docs/` | The full A-to-Z guide, 15 pages. |
 
 ## Commands cheat-sheet
 
 ```bash
+python main.py web                       # the point-and-click interface
 python main.py doctor                    # is everything installed?
 python main.py providers                 # what can I swap?
 python main.py voices                    # list TTS voices

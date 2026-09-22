@@ -166,8 +166,11 @@ def prepare_music(asm, track: Path, out_path: Path, duration: float, cfg) -> Pat
         af.append(f"afade=t=out:st={max(0.0, duration - fade_out):.2f}:d={fade_out:.2f}")
     af.append("aresample=48000:async=1")
 
-    from .utils import run_cmd
-    cmd = [str(cfg.get("system.ffmpeg_bin", "ffmpeg")), "-y", "-hide_banner", "-loglevel", "error"]
+    from .utils import resolve_ffmpeg, run_cmd
+    # resolve_ffmpeg also finds the copy that `pip install imageio-ffmpeg`
+    # downloads, so music works on a machine with no system ffmpeg.
+    cmd = [resolve_ffmpeg(str(cfg.get("system.ffmpeg_bin", "ffmpeg"))),
+           "-y", "-hide_banner", "-loglevel", "error"]
     if loops > 0:
         cmd += ["-stream_loop", str(loops)]
     cmd += ["-i", str(track)]

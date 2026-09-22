@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoVideoBot</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div>AutoVideoBot<small>script &rarr; finished video</small></div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button data-view="dashboard" class="active"><span class="ico">&#9635;</span> Dashboard</button>
+      <button data-view="create"><span class="ico">&#10010;</span> Create a video</button>
+      <button data-view="library"><span class="ico">&#9776;</span> My videos</button>
+      <button data-view="providers"><span class="ico">&#9881;</span> Providers</button>
+      <button data-view="settings"><span class="ico">&#9998;</span> Settings &amp; keys</button>
+      <button data-view="help"><span class="ico">?</span> Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div id="sideStatus">loading...</div>
+      <div style="margin-top:10px">
+        <button class="btn sm block" onclick="runDoctor()">Run health check</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN ==================== -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="viewTitle">Dashboard</h1>
+        <div class="sub" id="viewSub">Check that everything is ready, then make a video.</div>
+      </div>
+      <div class="btn-row">
+        <span class="pill" id="resolutionPill">&mdash;</span>
+        <button class="btn sm" onclick="loadState()">&#8635; Refresh</button>
+      </div>
+    </div>
+
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view active" id="view-dashboard">
+      <div id="dashBanner"></div>
+
+      <div class="grid c4" id="dashCards"></div>
+
+      <div class="split">
+        <div>
+          <div class="card">
+            <h2>Ready to build?</h2>
+            <p class="hint">Two ways in. Both end with the same finished MP4.</p>
+            <div class="btn-row">
+              <button class="btn primary" onclick="go('create')">&#9654; Create a video</button>
+              <button class="btn" onclick="loadExampleThenCreate()">Try the example script</button>
+              <button class="btn" onclick="runSelfTest()">Run the 8-second self-test</button>
+            </div>
+            <div class="progressbar" id="testBar" style="display:none"><i></i></div>
+          </div>
+
+          <div class="card">
+            <h2>Recent builds</h2>
+            <p class="hint">Rendering happens in the background, so you can keep using this page.</p>
+            <div id="jobsList"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>What is going to be used</h2>
+            <p class="hint">These come from config.yaml. Change them any time.</p>
+            <div id="activeProviders"></div>
+          </div>
+          <div class="card">
+            <h2>Background music</h2>
+            <div id="musicList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CREATE ============ -->
+    <section class="view" id="view-create">
+      <div class="split">
+        <div>
+          <div class="card">
+            <h2>1. What should the video be?</h2>
+            <p class="hint">Pick one. "My own script" is free and needs no accounts at all.</p>
+
+            <div class="btn-row" style="margin-bottom:14px">
+              <button class="btn" id="modeScript" onclick="setMode('script')">I have a script</button>
+              <button class="btn" id="modeTopic" onclick="setMode('topic')">Write it for me</button>
+            </div>
+
+            <label class="field">
+              <span>Video name <b>(used for the folder)</b></span>
+              <input type="text" id="runName" value="my-first-video" placeholder="my-first-video">
+            </label>
+
+            <!-- script mode -->
+            <div id="scriptPane">
+              <label class="field">
+                <span>Paste your script <b>(timestamps optional)</b></span>
+                <textarea id="scriptText" placeholder="[00:00 - 00:12]
+Black holes are not empty holes in space. They are places where gravity has won completely.
+@prompt: a supermassive black hole bending light, accretion disk glowing
+
+[00:12 - 00:25]
+Everything that crosses the event horizon is gone forever.
+@prompt: event horizon close up, distorted starlight, cinematic"></textarea>
+              </label>
+              <div class="btn-row">
+                <input type="file" id="scriptFile" accept=".txt,.md,.json" onchange="loadScriptFile(this)">
+                <button class="btn sm" onclick="loadExampleScript()">Load the example</button>
+                <button class="btn sm" onclick="document.getElementById('scriptText').value=''">Clear</button>
+              </div>
+              <p class="hint" style="margin-top:12px">
+                Formats accepted: <b>[00:00 - 00:12]</b>, <b>0:00 text</b>,
+                <b>00:00 -&gt; 00:12 | text</b>, or JSON. Directives like
+                <b>@prompt:</b>, <b>@motion:</b>, <b>@pause:</b> work too.
+                See the Help tab for the full list.
+              </p>
+            </div>
+
+            <!-- topic mode -->
+            <div id="topicPane" style="display:none">
+              <label class="field">
+                <span>Topic</span>
+                <input type="text" id="topicText" placeholder="why the ocean is deeper than the mountains">
+              </label>
+              <div class="grid c2">
+                <label class="field">
+                  <span>Target length (seconds)</span>
+                  <input type="number" id="topicDuration" value="120" min="20" max="1800" step="10">
+                </label>
+                <label class="field">
+                  <span>Extra instructions (optional)</span>
+                  <input type="text" id="topicInstructions" placeholder="calm tone, no jargon, 8th grade level">
+                </label>
+              </div>
+              <div class="banner" style="margin-top:4px">
+                <span>&#9432;</span>
+                <div>This mode needs an LLM. Free options: <b>Ollama</b> (offline, no
+                  account) or <b>openai_compat</b>. Paid: <b>DeepSeek</b> (about
+                  $0.002 per video). Set it in <b>Settings &amp; keys</b>.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>2. Build options</h2>
+            <p class="hint">The defaults are the free, tested path. Change anything.</p>
+            <div class="grid c3">
+              <label class="field">
+                <span>Quality</span>
+                <select id="quality">
+                  <option value="draft">Draft &mdash; fastest, rougher</option>
+                  <option value="standard" selected>Standard &mdash; recommended</option>
+                  <option value="high">High &mdash; slowest, best looking</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Shape</span>
+                <select id="aspect">
+                  <option value="16x9" selected>16:9 &mdash; YouTube (1920&times;1080)</option>
+                  <option value="9x16">9:16 &mdash; Shorts / Reels</option>
+                  <option value="1x1">1:1 &mdash; square</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Frames per second</span>
+                <select id="fps">
+                  <option value="24">24 &mdash; cinematic</option>
+                  <option value="30" selected>30 &mdash; standard</option>
+                  <option value="60">60 &mdash; very smooth, 2&times; slower</option>
+                </select>
+              </label>
+            </div>
+            <label class="switch" style="margin-bottom:4px">
+              <input type="checkbox" id="forceRebuild">
+              <span>Rebuild everything from scratch (ignore the cache)</span>
+            </label>
+          </div>
+
+          <div class="card">
+            <h2>3. Voices and providers</h2>
+            <p class="hint">Leave on "use my settings" unless you want to override just this video.</p>
+            <div class="grid c3">
+              <label class="field">
+                <span>Voice (TTS) provider</span>
+                <select id="pickTts" onchange="refreshVoices()"><option value="">use my settings</option></select>
+              </label>
+              <label class="field">
+                <span>Voice</span>
+                <select id="pickVoice"><option value="">use my settings</option></select>
+              </label>
+              <label class="field">
+                <span>Image provider</span>
+                <select id="pickImage"><option value="">use my settings</option></select>
+              </label>
+              <label class="field">
+                <span>Script writer (LLM)</span>
+                <select id="pickLlm"><option value="">use my settings</option></select>
+              </label>
+              <label class="field">
+                <span>Background music</span>
+                <select id="pickMusic"><option value="">automatic (config setting)</option></select>
+              </label>
+              <label class="field">
+                <span>&nbsp;</span>
+                <button class="btn block" onclick="go('settings')">Add API keys &rarr;</button>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- right column: the build monitor -->
+        <div>
+          <div class="card">
+            <h2 id="buildTitle">Build monitor</h2>
+            <p class="hint">The log below is the real thing &mdash; same output as the terminal.</p>
+            <div class="btn-row" style="margin-bottom:12px">
+              <button class="btn primary" id="buildBtn" onclick="startBuild()">&#9654; Build the video</button>
+              <button class="btn danger" id="stopBtn" onclick="stopJob()" disabled>&#9632; Stop</button>
+            </div>
+            <div class="progressbar" id="buildBar" style="display:none"><i></i></div>
+            <div class="console" id="buildLog"></div>
+          </div>
+
+          <div class="card" id="resultCard" style="display:none">
+            <h2>Result</h2>
+            <div id="resultBody"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LIBRARY ============ -->
+    <section class="view" id="view-library">
+      <div class="card">
+        <h2>My videos</h2>
+        <p class="hint">Every build is kept as a project, so you can re-render one stage without starting over.</p>
+        <div id="projectList"></div>
+      </div>
+      <div id="projectDetail"></div>
+    </section>
+
+    <!-- ============ PROVIDERS ============ -->
+    <section class="view" id="view-providers">
+      <div class="banner">
+        <span>&#9432;</span>
+        <div>Every stage of the bot has interchangeable tools. Switching one takes effect on
+          the next build &mdash; nothing else changes. Click <b>Test</b> to check a provider
+          without building a video.</div>
+      </div>
+      <div id="providerList"></div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" id="view-settings">
+      <div class="split">
+        <div>
+          <div class="card">
+            <h2>API keys <span class="pill" id="envPill">&mdash;</span></h2>
+            <p class="hint">Saved to the <code>.env</code> file next to the bot. Keys are never
+              shown back to the browser once saved &mdash; only whether they are filled in.</p>
+            <div id="envFields"></div>
+            <div class="btn-row">
+              <button class="btn primary" onclick="saveEnv()">Save keys</button>
+              <button class="btn" onclick="loadEnv()">Reload</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Common settings</h2>
+            <p class="hint">These write into <code>config.yaml</code>. Your comments in that file are preserved.</p>
+            <div class="grid c2" id="quickSettings"></div>
+            <div class="btn-row">
+              <button class="btn primary" onclick="saveQuickSettings()">Save settings</button>
+              <button class="btn" onclick="loadConfig()">Reload</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>Add your own files</h2>
+            <p class="hint">Everything the bot needs can be dropped in from here.</p>
+
+            <label class="field">
+              <span>Background music (.mp3/.wav/.m4a)</span>
+              <input type="file" accept="audio/*" onchange="uploadFile(this,'music')">
+            </label>
+            <label class="field">
+              <span>Watermark image (.png with transparency)</span>
+              <input type="file" accept=".png,.jpg,.jpeg" onchange="uploadFile(this,'asset')" data-kind="watermark">
+            </label>
+            <label class="field">
+              <span>Font for captions (.ttf / .otf)</span>
+              <input type="file" accept=".ttf,.otf,.ttc" onchange="uploadFile(this,'asset')" data-kind="font">
+            </label>
+            <label class="field">
+              <span>Piper voice model (.onnx or .onnx.json)</span>
+              <input type="file" accept=".onnx,.json" onchange="uploadFile(this,'asset')" data-kind="piper">
+            </label>
+            <div id="uploadLog" class="hint"></div>
+          </div>
+
+          <div class="card">
+            <h2>Advanced: any setting in the file</h2>
+            <p class="hint">Type part of a name to filter. This is the whole of config.yaml.</p>
+            <label class="field">
+              <span>Filter</span>
+              <input type="text" id="cfgFilter" placeholder="e.g. motion, audio.music, subtitles.style"
+                     oninput="filterConfig()">
+            </label>
+            <div class="scroll-x" style="max-height:420px; overflow-y:auto">
+              <table id="cfgTable"><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HELP ============ -->
+    <section class="view" id="view-help">
+      <div class="card">
+        <h2>Five minute start</h2>
+        <details class="help" open>
+          <summary>1. Check the machine</summary>
+          <p>Click <b>Run health check</b> in the sidebar. You want green lines for python and
+            ffmpeg. Warnings about keys are fine: a video made from <i>your own script</i> with the
+            free voices and the free image service needs no accounts at all.</p>
+        </details>
+        <details class="help">
+          <summary>2. Make a test video</summary>
+          <p>Click <b>Run the 8-second self-test</b> on the Dashboard. It builds a tiny video in
+            about a minute and proves every part of the toolchain works before you spend time on a
+            real one.</p>
+        </details>
+        <details class="help">
+          <summary>3. Build a real one</summary>
+          <p>Go to <b>Create a video</b>, paste a script (or load the example), give it a name and
+            press <b>Build</b>. Watch the log: each of the ten stages explains itself as it runs.</p>
+        </details>
+        <details class="help">
+          <summary>4. Where things end up</summary>
+          <pre>workspace/projects/&lt;your video name&gt;/
+    output/final.mp4            &larr; the video
+    output/thumbnail.jpg
+    output/youtube_metadata.json &larr; title, description, tags, chapters
+    subs/captions.srt           &larr; upload to YouTube if you did not burn them in
+    images/  clips/  audio/     &larr; the pieces (kept, so re-runs are instant)</pre>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Script format</h2>
+        <p class="hint">All four styles work. Everything except the narration is optional.</p>
+        <details class="help" open>
+          <summary>Timestamps</summary>
+          <pre>[00:00 - 00:12]        a range per scene  (clearest)
+Black holes are not empty holes in space.
+
+0:12  one timestamp at the start of the line
+00:12 -> 00:25 | arrow style with a pipe
+
+{"title": "...", "scenes": [{"start": 0, "end": 12, "narration": "..."}]}</pre>
+        </details>
+        <details class="help">
+          <summary>Scene directives</summary>
+          <pre>@prompt: a supermassive black hole, accretion disk, cinematic
+@motion: zoom_in          (or pan_left_right, zoom_out, static...)
+@title: The Event Horizon
+@pause: 1.2               extra silence after this scene (seconds)
+@voice: en-GB-RyanNeural  use a different voice just here
+@speed: 1.1               speak this scene 10% faster
+@music: tense_dark.mp3    force a specific music track for this scene
+@subtitle: off            hide captions on this scene
+@skip:                    mark the scene as not-needed</pre>
+        </details>
+        <details class="help">
+          <summary>File headers</summary>
+          <pre>#title: Black Holes: The Universe's Most Extreme Places
+#description: A short documentary about...
+#tags: space, black holes, science
+#voice: en-US-GuyNeural
+#music: calm_space_ambient.mp3
+#style: cinematic, volumetric light
+#aspect: 16x9
+#language: English</pre>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Fixing problems</h2>
+        <details class="help">
+          <summary>"ffmpeg NOT FOUND"</summary>
+          <p>Run <code>scripts/install_windows.bat</code> (Windows) or
+            <code>bash scripts/setup.sh</code> (macOS/Linux). Both install a private copy of
+            ffmpeg inside the project, so nothing has to be added to your PATH.</p>
+        </details>
+        <details class="help">
+          <summary>"Edge-TTS unavailable"</summary>
+          <p>That is a network problem, not an installation problem. Check your internet, or build
+            offline with <code>--set tts.provider=test</code> (the tone voice) or
+            <b>piper</b>/<b>espeak</b>. On the Create page you can pick the voice provider per build.</p>
+        </details>
+        <details class="help">
+          <summary>Images all look like dark cards with text</summary>
+          <p>That is the placeholder card. It means the image provider failed for those scenes and
+            the bot deliberately carried on so you still get a video. Open <b>Providers</b>, test
+            your image provider, and read the message it gives you. Common causes: no internet
+            (Pollinations), the Stable Diffusion WebUI needs the <code>--api</code> flag, or a
+            Colab link has expired.</p>
+        </details>
+        <details class="help">
+          <summary>The machine froze or ffmpeg was "Killed"</summary>
+          <p>Out of RAM, almost always the super-sampling. Set
+            <code>motion.supersample</code> to <code>2</code> and
+            <code>system.parallel_scenes</code> to <code>1</code> in
+            <b>Settings &rarr; Advanced</b>. Rendering at 1280&times;720 instead of 1920&times;1080
+            also helps a lot.</p>
+        </details>
+        <details class="help">
+          <summary>Where do I put my own voice / music / logo?</summary>
+          <p><b>Settings &amp; keys &rarr; Add your own files.</b> Music goes to
+            <code>assets/background_music</code>, the watermark replaces
+            <code>assets/watermark.png</code> (enable it with
+            <code>extras.watermark.enabled: true</code>), and fonts land in
+            <code>assets/fonts</code>.</p>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Honest cost table</h2>
+        <div class="scroll-x">
+          <table>
+            <thead><tr><th>Setup</th><th>Cost for a 5-minute video</th><th>Needs</th></tr></thead>
+            <tbody>
+              <tr><td>Your script + edge voice + Pollinations images</td><td><b>$0</b></td><td>internet</td></tr>
+              <tr><td>Offline (test voice + SD WebUI on your GPU)</td><td><b>$0</b></td><td>your GPU</td></tr>
+              <tr><td>Colab free GPU images</td><td><b>$0</b></td><td>a Google account</td></tr>
+              <tr><td>Kaggle free GPU images</td><td><b>$0</b></td><td>a Kaggle account</td></tr>
+              <tr><td>DeepSeek writes the script</td><td>~$0.002</td><td>a card on DeepSeek</td></tr>
+              <tr><td>Vast.ai rents a 4090 for the images</td><td>~$0.03&ndash;$0.20</td><td>a card on Vast.ai</td></tr>
+              <tr><td>ElevenLabs voice</td><td>~$0.10&ndash;$0.30</td><td>a card on ElevenLabs</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

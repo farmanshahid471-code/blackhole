@@ -19,9 +19,62 @@ from typing import Any, Iterable
 
 try:
     from rich.console import Console
-    console = Console()
 except Exception:                                  # pragma: no cover
-    console = None
+    Console = None                                 # type: ignore[assignment]
+
+_console = None
+
+
+def _get_console():
+    """
+    A rich Console that ALWAYS writes to whatever sys.stdout is right now.
+
+    WHY THIS IS NOT JUST `console = Console()`
+    ------------------------------------------
+    rich grabs sys.stdout when the Console is created, and keeps that reference
+    forever. That breaks two things we care about:
+
+      * the web UI captures a build's output by swapping sys.stdout for a
+        writer object. A console built at import time kept printing to the
+        real terminal, so the browser's log would have been mysteriously
+        empty of stage banners.
+      * redirect_stdout() around a chatty library call (used to keep a
+        "missing API key" essay out of the middle of a successful build)
+        would not have silenced rich either.
+
+    Rebuilding the console ONLY when the output stream changes gives us both,
+    and costs nothing in the normal case.
+    """
+    global _console
+    if Console is None:
+        return None
+    if _console is None or getattr(_console, "file", None) is not sys.stdout:
+        try:
+            # soft_wrap keeps long paths from being reflowed oddly in a browser
+            _console = Console(file=sys.stdout, soft_wrap=False)
+        except Exception:                          # pragma: no cover
+            return None
+    return _console
+
+
+# kept for anything that imports `console` directly (older code/plugins)
+class _ConsoleProxy:
+    """Forwards attribute access to the live console (or to print)."""
+
+    def __getattr__(self, item):
+        c = _get_console()
+        if c is None:
+            raise AttributeError(item)
+        return getattr(c, item)
+
+    def print(self, *args, **kwargs):
+        c = _get_console()
+        if c is not None:
+            return c.print(*args, **kwargs)
+        return print(*args)
+
+
+console = _ConsoleProxy()
 
 
 # ---------------------------------------------------------------------------
@@ -29,10 +82,14 @@ except Exception:                                  # pragma: no cover
 # ---------------------------------------------------------------------------
 def log(msg: str, style: str = "") -> None:
     """Print a message. Uses rich colours when available."""
-    if console:
-        console.print(msg, style=style or None)
-    else:
-        print(msg)
+    c = _get_console()
+    if c is not None:
+        try:
+            c.print(msg, style=style or None, highlight=False)
+            return
+        except Exception:                          # pragma: no cover
+            pass
+    print(re.sub(r"\[/?[a-zA-Z0-9 _=#\.\-]+\]", "", str(msg)))
 
 
 def step(title: str) -> None:
@@ -234,6 +291,82 @@ def run_cmd(
 
 def which(binary: str) -> str | None:
     return shutil.which(binary)
+
+
+# ---------------------------------------------------------------------------
+# FFMPEG DISCOVERY
+# ---------------------------------------------------------------------------
+def resolve_ffmpeg(configured: str | None = None, fallback: str | None = "ffmpeg") -> str:
+    """
+    Find a usable ffmpeg, in this order:
+
+      1. the exact path in config.yaml  (system.ffmpeg_bin)
+      2. whatever is on your PATH
+      3. the ffmpeg that the 'imageio-ffmpeg' pip package downloads for you
+
+    Step 3 is what saves beginners: `pip install imageio-ffmpeg` puts a real
+    ffmpeg binary inside your virtual environment, so the bot works even if
+    you never installed ffmpeg system-wide (this is what the Windows installer
+    does for you automatically).
+
+    Returns the path (or the plain name, which fails later with a clear error).
+    """
+    candidates: list[str] = []
+    if configured and str(configured).strip():
+        candidates.append(str(configured).strip())
+    candidates.append("ffmpeg")
+    if fallback and fallback not in candidates:
+        candidates.append(str(fallback))
+
+    for cand in candidates:
+        if os.path.sep in cand or (os.path.altsep and os.path.altsep in cand):
+            if Path(cand).exists():
+                return cand
+            continue
+        found = shutil.which(cand)
+        if found:
+            return found
+
+    # ---- bundled copy from the imageio-ffmpeg package -------------------
+    try:
+        import imageio_ffmpeg                                  # type: ignore
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).exists():
+            return exe
+    except Exception:
+        pass
+
+    return str(configured or "ffmpeg")
+
+
+def resolve_ffprobe(configured: str | None = None) -> str | None:
+    """
+    ffprobe is a *separate* program that ships next to ffmpeg.
+
+    IMPORTANT: it is very common to have ffmpeg but NOT ffprobe (the pip
+    imageio-ffmpeg package only bundles ffmpeg). The bot therefore never
+    requires it - probe_duration() falls back to parsing `ffmpeg -i` output,
+    which reports the same duration. This function just tries to be nice.
+    """
+    if configured and str(configured).strip():
+        cand = str(configured).strip()
+        if Path(cand).exists():
+            return cand
+        found = shutil.which(cand)
+        if found:
+            return found
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    # maybe it sits next to the ffmpeg we found
+    try:
+        ff = resolve_ffmpeg(None, None)
+        beside = Path(ff).with_name("ffprobe" + (".exe" if os.name == "nt" else ""))
+        if beside.exists():
+            return str(beside)
+    except Exception:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------

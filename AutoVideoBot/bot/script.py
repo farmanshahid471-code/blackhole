@@ -143,8 +143,23 @@ def parse_script_file(path: Path, *, default_scene_seconds: float = 6.0) -> dict
     text = path.read_text(encoding="utf-8", errors="replace")
 
     # --- maybe it is JSON ------------------------------------------------
+    # CAREFUL: the most popular timestamp style starts with a bracket too!
+    #
+    #     [00:00 - 00:12]  <- this is a timestamp, not a JSON array
+    #
+    # So "starts with [ " is not enough to decide. A JSON script must either
+    # contain a quoted key followed by a colon, or a "scenes" list. Anything
+    # else is handed to the normal timestamp parser, silently - a warning
+    # here would appear on almost every hand-written script and teach people
+    # to ignore warnings, which is much worse than being one line longer.
     stripped = text.strip()
-    if stripped.startswith("{") or stripped.startswith("["):
+    looks_json = bool(
+        stripped.startswith("{")
+        or (stripped.startswith("[") and ('"' in stripped[:400] and ":" in stripped[:400]))
+    )
+    if stripped.startswith("{") and '"scenes"' in text[:2000]:
+        looks_json = True
+    if looks_json:
         try:
             data = extract_json(stripped)
             return normalise_llm_json(data, source="file-json")

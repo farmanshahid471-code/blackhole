@@ -24,6 +24,25 @@ edge-tts>=6.1.0           # FREE Microsoft neural voices, no API key needed
 pydub>=0.25.1             # easy audio duration / volume / concat
 
 # ---------------------------------------------------------------------------
+# TIER 2b - THE WEB INTERFACE  (python main.py web)
+#      Not needed for the command line, but this is how most people use the
+#      bot: buttons instead of commands, and a live view of every stage.
+#      The installer adds these for you.
+# ---------------------------------------------------------------------------
+fastapi>=0.110.0          # the web server itself
+uvicorn[standard]>=0.29.0 # serves FastAPI (the [standard] part is much faster)
+python-multipart>=0.0.9   # needed to upload your music / logo from the browser
+psutil>=5.9.0             # reads CPU/RAM so the bot can warn before a render
+
+# ---------------------------------------------------------------------------
+# TIER 2c - A PRIVATE COPY OF FFMPEG
+#      ffmpeg is not a Python package, but this one DOWNLOADS a real, complete
+#      ffmpeg binary into your virtual environment on first use. It is what
+#      lets the bot work on a PC that has never had ffmpeg installed.
+# ---------------------------------------------------------------------------
+imageio-ffmpeg>=0.4.9     # `pip install imageio-ffmpeg` -> bundled ffmpeg
+
+# ---------------------------------------------------------------------------
 # TIER 3 - OPTIONAL LLM / TTS / IMAGE PROVIDERS
 #      (uncomment only the ones you actually use)
 # ---------------------------------------------------------------------------

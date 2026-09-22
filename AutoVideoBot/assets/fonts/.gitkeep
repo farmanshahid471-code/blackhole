@@ -1,0 +1,7 @@
+Optional fonts for burned-in captions and thumbnail titles.
+
+The bot uses whatever font is already installed on your computer
+(config.yaml -> subtitles.style.font, default "DejaVu Sans").
+If you want a specific look, drop a .ttf file here and set the font name
+in config.yaml. On Windows a quick way is to right-click a .ttf and choose
+"Install for all users", then use the font's name, e.g. "Montserrat".
