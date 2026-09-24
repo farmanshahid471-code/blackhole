@@ -9,6 +9,12 @@ python main.py inspect NAME    # what finished, what is missing
 
 Set `system.log_level: DEBUG` in config.yaml to see every ffmpeg/http call.
 
+**The run log.** Every run also writes everything it printed to
+`workspace/projects/NAME/logs/run.log`, and appends to it instead of
+overwriting, so the whole history of a project is in one file. If a render
+failed, or you closed the window, that file is the thing to open first - and it
+is the thing to send if you ask for help.
+
 ---
 
 ## Installation & toolchain
@@ -90,8 +96,19 @@ The link expired. Re-run the notebook, paste the new link
 You imported the template, not the generated `workspace/kaggle_out/kernel.ipynb`.
 
 ### Placeholder cards in the video
-An image failed and the bot kept the project alive on purpose. Fix the cause,
-then: `python main.py images NAME --only s07 --force`.
+An image failed and the bot kept the project alive on purpose. Fix the cause
+(pick a provider, paste the tunnel link, fix the key), then simply run the
+project again:
+
+```bash
+python main.py run NAME --script my_script.txt     # no --force needed
+```
+
+The pictures that are missing or still placeholders are generated again, and
+because the bot fingerprints the *bytes* of every picture, only the affected
+scenes re-render - the clips, the crossfade join and the final export follow
+automatically. To redo one scene instead:
+`python main.py images NAME --only s07 --force`.
 
 ## Timing / sync problems
 

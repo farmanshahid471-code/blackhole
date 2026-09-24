@@ -55,8 +55,9 @@ from .paths import ROOT, Project
 from .registry import get_provider_class
 from .state import Manifest, Scene, Script
 from .utils import (
-    debug, die, ensure_dir, fail, fmt_time, human_bytes, info, ok,
-    read_json, retry, stable_hash, step, warn, write_json,
+    attach_run_log,
+    debug, die, ensure_dir, fail, file_fingerprint, fmt_time, human_bytes, info,
+    ok, read_json, retry, stable_hash, step, warn, write_json,
 )
 
 
@@ -74,6 +75,12 @@ class Pipeline:
         self.only: set[str] | None = None
         self.endpoint_override: str | None = None
         project.create()
+        # Copy everything this run prints into <project>/logs/run.log as well,
+        # so a failed render can still be read (or sent) after the window closes.
+        try:
+            attach_run_log(project.log_file)
+        except Exception:                          # never break a run over a log
+            pass
 
     # ==================================================================
     # PROVIDER FACTORY
@@ -506,9 +513,20 @@ class Pipeline:
         base_seed = int(icfg.get("seed", 12345))
 
         jobs: list[dict] = []
+        kept_offline = 0
         for i, sc in enumerate(self.scenes):
             sid = sc["id"]
             out = self.project.scene_image(sid, "jpg")
+            # The provider just told us it cannot work right now. If a picture
+            # from an earlier run (a placeholder card counts) is already on
+            # disk, keep it and move on: re-failing four times only makes the
+            # run slower. The scene is deliberately NOT marked as done, so the
+            # moment the provider answers again this image is regenerated and
+            # everything downstream follows the new bytes (file_fingerprint).
+            if not alive and out.exists() and not self.force:
+                sc["image_path"] = str(out)
+                kept_offline += 1
+                continue
             params = {
                 "provider": name, "prompt": sc.get("image_prompt", ""),
                 "w": gen_w, "h": gen_h, "steps": steps, "cfg": cfg_scale,
@@ -537,6 +555,9 @@ class Pipeline:
                 "seed": seed, "_key": key, "_index": i,
             })
 
+        if kept_offline:
+            info(f"  (provider still unreachable: kept {kept_offline} picture(s) already "
+                 f"on disk - they are retried as soon as it answers again)")
         info(f"{len(jobs)} image(s) to generate ({len(self.scenes) - len(jobs)} already cached)")
         if not jobs:
             self._link_images()
@@ -695,6 +716,10 @@ class Pipeline:
                 "fps": self.cfg.get("video.fps"), "zoom": mcfg.get("zoom_amount"),
                 "grade": mcfg.get("color_grade"), "vig": mcfg.get("add_vignette"),
                 "audio": audio.name if audio.exists() else None,
+                # the BYTES of the picture, so replacing a placeholder card with
+                # the real image re-renders this clip even though the name is
+                # the same (see utils.file_fingerprint)
+                "img_fp": file_fingerprint(img),
             })
             if self._skip(key, out):
                 sc["clip_path"] = str(out)
@@ -779,7 +804,9 @@ class Pipeline:
 
         out = self.project.silent_video
         key = self._cache_key("transition", "all", {
-            "clips": [c.name for c in clips],
+            # name + content, so a re-rendered clip (same name, new pictures)
+            # makes this join rebuild itself instead of silently keeping the old
+            "clips": [f"{c.name}:{file_fingerprint(c)}" for c in clips],
             "type": tcfg.get("type"), "dur": tcfg.get("duration"),
             "enabled": tcfg.get("enabled"), "vary": tcfg.get("vary"),
         })
@@ -948,8 +975,13 @@ class Pipeline:
                 warn(f"watermark enabled but {wm_path} does not exist - skipping")
 
         key = self._cache_key("assembly", "final", {
-            "video": video.name, "audio": audio.name,
-            "subs": sub_file.name if sub_file else None, "sub_style": sub_cfg.get("style"),
+            # contents, not just names - a new picture track or a new mix must
+            # produce a new final.mp4 (an identical mix.wav still hashes the
+            # same, so a plain re-run stays instant)
+            "video": f"{video.name}:{file_fingerprint(video)}",
+            "audio": f"{audio.name}:{file_fingerprint(audio)}",
+            "subs": (f"{sub_file.name}:{file_fingerprint(sub_file)}" if sub_file else None),
+            "sub_style": sub_cfg.get("style"),
             "wm": str(wm) if wm else None, "wmcfg": wcfg,
             "codec": self.cfg.get("video.codec"), "crf": self.cfg.get("video.crf"),
             "preset": self.cfg.get("video.preset"),

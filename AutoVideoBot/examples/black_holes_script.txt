@@ -13,7 +13,13 @@
 #tags: space, black holes, physics, astronomy, science documentary
 #style: dark cinematic space photography, volumetric light, deep blacks, film grain
 #voice: en-US-ChristopherNeural
-#music: test-ambient-dark.mp3
+#       ^ pick any voice from:  python main.py voices --filter en-US
+# ---- MUSIC (optional) ------------------------------------------------------
+# Put a .mp3/.wav/.m4a/.flac file into assets/background_music/ first, then
+# uncomment the next line and put that file's name here. Nothing is shipped
+# with the bot (music has licences), so an uncommented #music: line for a file
+# you have not added yet just prints a warning and makes the video silent.
+#music: my_track.mp3
 #aspect: 16x9
 
 # ---- SCENE 1 ----------------------------------------------------------------

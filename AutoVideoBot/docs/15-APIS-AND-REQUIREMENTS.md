@@ -88,11 +88,12 @@ redoing the whole video (`python main.py images myvideo --force`).
                     youtube_metadata.json
 ```
 
-Every stage is **cached**. The bot keeps a manifest
-(`project/manifest/script.json`) that records "stage 4 is done for scene s03,
-and the file still exists". If you run the same project again and nothing
-changed, it skips straight through. Change something and only the affected
-stages redo their work.
+Every stage is **cached**. The bot keeps a manifest (`manifest.json` in the
+project folder) that records "stage 4 is done for scene s03, and the file still
+exists". If you run the same project again and nothing changed, it skips
+straight through - a finished 47-second video re-runs in under a second -
+and it also records a history of every run with its duration. Change something
+and only the affected stages redo their work.
 
 ### Which stages touch the internet
 
@@ -117,26 +118,30 @@ your own machine, for free.
 
 ```
 workspace/projects/black-holes/
-├── project/
-│   ├── manifest/script.json     the cache: what is finished, and the script itself
-│   ├── voice_full.wav           every scene joined into one narration track
-│   ├── voice_norm.wav           the same, mastered
-│   ├── music_full.wav           background music, looped to the exact length
-│   ├── mix.wav                  voice + music, ducked, limited  <- stage 8 output
-│   └── video_silent.mp4         picture only, no sound        <- stage 6 output
+├── script.json                  the canonical scene list  <- stage 1 output
+├── input.txt                    your own script text, if you supplied one
+├── manifest.json                the cache: what is finished, plus every run's log line
+├── voice_full.wav               every scene joined into one narration track
+├── voice_norm.wav               the same, mastered
+├── music_full.wav               background music, looped to the exact length
+├── mix.wav                      voice + music, ducked, limited   <- stage 8 output
+├── video_silent.mp4             picture only, no sound          <- stage 6 output
 ├── audio/s01.mp3 ...            per-scene voice files  (+ audio/words/s01.json = word timings)
-├── images/s01.png ...           per-scene pictures
+├── images/s01.jpg ...           per-scene pictures
 ├── clips/s01.mp4 ...            per-scene moving clips
 ├── subs/captions.ass, .srt      caption files
 ├── output/
 │   ├── final.mp4                <- THE VIDEO
 │   ├── thumbnail.jpg
 │   └── youtube_metadata.json
-└── logs/run.log                 full log of every run
+├── logs/run.log                 the full console output of every run, appended
+├── tmp/                         scratch space used during rendering
+└── trans/                       the temporary parts of a crossfade join
 ```
 
-Note the mix outputs live at the **project root** (`project/mix.wav`), not in
-`audio/`. That surprises people looking for them.
+The mix, the silent video and the narration tracks sit at the **project root**
+(next to `manifest.json`), not inside `audio/`. That surprises people who go
+looking for them - they are easy to find once you know.
 
 ---
 

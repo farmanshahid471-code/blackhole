@@ -78,6 +78,135 @@ console = _ConsoleProxy()
 
 
 # ---------------------------------------------------------------------------
+# THE PROJECT LOG FILE  (workspace/projects/<name>/logs/run.log)
+# ---------------------------------------------------------------------------
+#   Every run is ALSO written to a text file inside the project folder, so that
+#   when something goes wrong you can open one file and read the whole story -
+#   or send it to someone - instead of scrolling a terminal that has already
+#   been closed. The terminal output is untouched: we write to both at once.
+#
+#   This is a "tee": sys.stdout (and sys.stderr) are wrapped in an object that
+#   forwards everything to the real stream AND to the open log file.
+# ---------------------------------------------------------------------------
+class _Tee:
+    """Forwards write() to the real stream and to the project's run.log."""
+
+    def __init__(self, stream, handle):
+        self._stream = stream
+        self._handle = handle
+
+    # -- the important bits -------------------------------------------
+    def write(self, data):
+        if isinstance(data, bytes):                # paranoia: keep it text
+            data = data.decode("utf-8", "replace")
+        try:
+            self._stream.write(data)
+        except Exception:                          # pragma: no cover
+            pass
+        try:
+            self._handle.write(data)
+        except Exception:                          # pragma: no cover
+            pass
+        return len(data)
+
+    def flush(self):
+        for target in (self._stream, self._handle):
+            try:
+                target.flush()
+            except Exception:                      # pragma: no cover
+                pass
+
+    def isatty(self):
+        return False
+
+    def writable(self):
+        return True
+
+    def readable(self):
+        return False
+
+    @property
+    def encoding(self):
+        return getattr(self._stream, "encoding", "utf-8") or "utf-8"
+
+    @property
+    def errors(self):
+        return getattr(self._stream, "errors", "replace")
+
+    @property
+    def log_path(self):
+        return getattr(self._handle, "name", "")
+
+    def fileno(self):                              # subprocess(...) may ask
+        return self._stream.fileno()
+
+    def __getattr__(self, item):                   # delegate anything else
+        return getattr(self._stream, item)
+
+
+_run_log_handle = None
+
+
+def attach_run_log(path) -> bool:
+    """
+    Start copying all console output into `path` (the project's run.log).
+
+    Safe to call more than once, and safe to call from the web UI (where
+    sys.stdout is already a capture object - the tee simply sits on top of it).
+    Returns True when the log is being written.
+    """
+    global _run_log_handle
+    import atexit
+    from pathlib import Path as _Path
+
+    p = _Path(path)
+    try:
+        ensure_dir(p.parent)
+        already = isinstance(sys.stdout, _Tee) and str(getattr(sys.stdout, "log_path", "")) == str(p)
+        handle = sys.stdout._handle if already else open(p, "a", encoding="utf-8", errors="replace")
+    except Exception as e:                         # pragma: no cover
+        try:
+            print(f"(could not open the run log: {e})")
+        except Exception:
+            pass
+        return False
+
+    if already:
+        return True
+
+    if _run_log_handle is not None and _run_log_handle is not handle:
+        try:
+            _run_log_handle.close()
+        except Exception:                          # pragma: no cover
+            pass
+    _run_log_handle = handle
+
+    handle.write(
+        "\n"
+        + "=" * 78 + "\n"
+        + f"  AutoVideoBot run log  -  {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        + f"  project: {p.parent.parent.name}\n"
+        + "  (this file is appended to on every run - send it if you need help)\n"
+        + "=" * 78 + "\n"
+    )
+    try:
+        sys.stdout = _Tee(sys.stdout, handle)
+        sys.stderr = _Tee(sys.stderr, handle)
+    except Exception:                              # pragma: no cover
+        return False
+
+    def _close():                                  # runs at interpreter exit
+        try:
+            handle.flush()
+            handle.close()
+        except Exception:                          # pragma: no cover
+            pass
+
+    atexit.register(_close)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # PRETTY TERMINAL OUTPUT
 # ---------------------------------------------------------------------------
 def log(msg: str, style: str = "") -> None:
@@ -129,6 +258,41 @@ def ensure_dir(p: Path | str) -> Path:
     p = Path(p)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def file_fingerprint(path: Path | str) -> str:
+    """
+    A short hash of a file's CONTENT (16 hex chars), or "" if unreadable.
+
+    WHY THIS EXISTS - the "fixed my images but the video did not change" trap
+    -----------------------------------------------------------------------
+    The bot decides whether a step can be skipped by hashing the *inputs* of
+    that step. If the fingerprint of an image were just its file name
+    ("s01.jpg"), then replacing a placeholder card with the real artwork -
+    the exact thing you do after getting internet back - would look like
+    "nothing changed", and the final video would still contain the placeholder.
+
+    Hashing the bytes instead means: change the picture and the clip, the
+    crossfade join and the final render all notice, and only they redo their
+    work. Files under 64 MB are hashed whole (a 3 MB clip takes ~5 ms); bigger
+    ones are sampled from both ends, which is plenty to spot a change.
+    """
+    p = Path(path)
+    try:
+        size = p.stat().st_size
+        h = hashlib.sha1()
+        h.update(f"{size}:".encode())
+        with open(p, "rb") as f:
+            if size <= 64 * 1024 * 1024:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            else:
+                h.update(f.read(1 << 20))
+                f.seek(-(1 << 20), os.SEEK_END)
+                h.update(f.read())
+        return h.hexdigest()[:16]
+    except Exception:
+        return ""
 
 
 def slugify(text: str, max_len: int = 48) -> str:
