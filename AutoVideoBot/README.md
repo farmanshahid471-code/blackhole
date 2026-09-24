@@ -113,6 +113,7 @@ python main.py run "vid" --script s.txt --set image.provider=vast
 | [docs/12-EXTENDING.md](docs/12-EXTENDING.md) | Add your own provider in ~40 lines |
 | [docs/13-COSTS.md](docs/13-COSTS.md) | What each path costs per finished video |
 | [docs/14-WEB-UI.md](docs/14-WEB-UI.md) | **The point-and-click interface:** every screen, every button, troubleshooting |
+| [docs/15-APIS-AND-REQUIREMENTS.md](docs/15-APIS-AND-REQUIREMENTS.md) | **What you actually need and how it works:** every API call, every key, costs, three ready-made setups |
 
 ## Files in the top folder (what each one is for)
 

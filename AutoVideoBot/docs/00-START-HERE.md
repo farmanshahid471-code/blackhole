@@ -380,3 +380,5 @@ better-looking.
 * Want it unattended and cents-per-video? `docs/06-VAST-AI-GPU.md`.
 * Want your own cloned voice? `docs/05-PROVIDERS.md` -> VoiceStudio.
 * Want it to be YOUR bot? `docs/12-EXTENDING.md`.
+* Want the whole picture in one page - what runs where, what you must sign up
+  for, every API call and every price? `docs/15-APIS-AND-REQUIREMENTS.md`.
