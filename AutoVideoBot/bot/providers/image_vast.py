@@ -50,12 +50,131 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import ROOT
+
 from ..registry import register
 from ..utils import debug, die, info, run_cmd, which, warn
 from . import _wire
 from .base import ImageProvider
 
 API_BASE = "https://console.vast.ai/api/v0"
+
+
+def _fmt_metric(offer: dict[str, Any], *keys: str) -> str:
+    """First numeric metric present, formatted; '?' when the host hides it."""
+    for k in keys:
+        v = offer.get(k)
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except Exception:
+            continue
+        return f"{f:.2f}" if f <= 10 else f"{f:.0f}"
+    return "?"
+
+
+def pick_best_offer(offers: list[dict[str, Any]], *,
+                    min_reliability: float = 0.95,
+                    min_inet_down: float = 200.0,
+                    min_cuda: float = 12.0) -> tuple[dict[str, Any], list[str]]:
+    """
+    Choose which Vast.ai machine to rent, and say what was relaxed.
+
+    WHY NOT JUST TAKE THE CHEAPEST ONE
+    ----------------------------------
+    Vast is a marketplace, and the cheapest offer is usually cheap for a
+    reason: a host that has been up for two days (reliability 0.4), a 20 Mbit
+    connection (the bot has to download 7-24 GB of model weights before the
+    first picture), or a stale CUDA driver. Any of those turns a 4-minute
+    render into an hour of watching a progress bar - and on a rented GPU that
+    hour is not free.
+
+    So: keep every offer that clears the gates, then take the cheapest of
+    those. If nothing clears, relax the network gate first, then reliability,
+    and always rent *something* usable rather than failing the run - the
+    caller gets back the list of relaxations and prints them.
+    """
+    if not offers:
+        raise RuntimeError("Vast.ai returned no offers at all")
+
+    notes: list[str] = []
+
+    def price(o: dict[str, Any]) -> float:
+        try:
+            return float(o.get("dph_total") or 9e9)
+        except Exception:
+            return 9e9
+
+    def reliable(o: dict[str, Any]) -> float:
+        for key in ("reliability2", "reliability", "score"):
+            if o.get(key) is not None:
+                try:
+                    return float(o[key])
+                except Exception:
+                    continue
+        return -1.0                                  # unknown -> treat as best
+
+    def down(o: dict[str, Any]) -> float:
+        for key in ("inet_down", "inet_down_mbps"):
+            if o.get(key) is not None:
+                try:
+                    return float(o[key])
+                except Exception:
+                    continue
+        return -1.0
+
+    def cuda(o: dict[str, Any]) -> float:
+        try:
+            return float(o.get("cuda_max_good") or 99)   # unknown -> accept
+        except Exception:
+            return 99.0
+
+    current = [o for o in offers if cuda(o) >= min_cuda]
+    if not current:
+        notes.append(f"no host reports CUDA >= {min_cuda:.0f} - using the list as-is")
+        current = list(offers)
+    elif len(current) != len(offers):
+        notes.append(f"skipped {len(offers) - len(current)} host(s) with an older CUDA driver")
+
+    stage = current
+
+    def gated(offers_in: list[dict[str, Any]], value, gate: float,
+              label: str) -> list[dict[str, Any]]:
+        """Keep hosts that pass the gate. An unknown value (-1) always passes."""
+        passed = [o for o in offers_in if value(o) < 0 or value(o) >= gate]
+        if not passed:
+            notes.append(f"every remaining host is below the minimum {label} "
+                         f"({gate:g}) - ignoring that rule")
+            return offers_in
+        if len(passed) != len(offers_in):
+            notes.append(f"skipped {len(offers_in) - len(passed)} host(s) below the "
+                         f"minimum {label} ({gate:g})")
+        return passed
+
+    stage = gated(stage, down, min_inet_down, "network speed (Mbit/s)")
+    stage = gated(stage, reliable, min_reliability, "reliability")
+
+    # A host that publishes both numbers has been *checked* against our rules;
+    # a host that hides them has merely not failed them. Prefer the verified
+    # ones unless doing so would cost a lot more than the hidden ones - we
+    # cannot know "a lot more" without a price, so: prefer verified, and only
+    # fall back to the unknown ones when there are no verified hosts at all.
+    checked = [o for o in stage if reliable(o) >= 0 and down(o) >= 0]
+    if checked and len(checked) != len(stage):
+        notes.append(f"kept the {len(checked)} host(s) that publish reliability "
+                     f"and network figures (dropped {len(stage) - len(checked)} unknown)")
+    pool = checked or stage
+
+    best = min(pool, key=price)
+
+    # A machine that is cheap AND known-bad is worth one warning line.
+    if reliable(best) >= 0 and reliable(best) < min_reliability:
+        notes.append(f"warning: the chosen host is cheap but unreliable "
+                     f"(reliability {reliable(best):.2f})")
+    if down(best) >= 0 and down(best) < min_inet_down:
+        notes.append(f"warning: the chosen host is slow to download from "
+                     f"({down(best):.0f} Mbit/s) - the model download may take a while")
+    return best, notes
 
 
 @register("image", "vast",
@@ -181,10 +300,23 @@ class VastProvider(ImageProvider):
                 f"  Or use the free route:  image.provider: colab"
             )
         offers.sort(key=lambda o: float(o.get("dph_total", 9e9)))
-        best = offers[0]
-        info(f"  cheapest match: {best.get('gpu_name')} "
+        notes: list[str] = []
+        try:
+            best, notes = pick_best_offer(
+                offers,
+                min_reliability=float(s.get("min_reliability", 0.95)),
+                min_inet_down=float(s.get("min_inet_down_mbps", 200)),
+                min_cuda=float(s.get("min_cuda", 12.0)),
+            )
+        except Exception:                              # pragma: no cover
+            best = offers[0]
+        info(f"  picked: {best.get('gpu_name')} "
              f"${float(best.get('dph_total', 0)):.3f}/h on "
-             f"{str(best.get('geolocation') or 'somewhere')[:40]}")
+             f"{str(best.get('geolocation') or 'somewhere')[:40]} "
+             f"(reliability {_fmt_metric(best, 'reliability2', 'reliability')}, "
+             f"down {_fmt_metric(best, 'inet_down')} Mbit/s)")
+        for n in notes:
+            info(f"  · {n}")
         return best
 
     def _create_instance(self, offer: dict[str, Any]) -> dict[str, Any]:

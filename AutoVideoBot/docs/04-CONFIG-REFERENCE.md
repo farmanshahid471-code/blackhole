@@ -53,6 +53,12 @@ Per-provider blocks:
   `instance_id`, `search.{gpu_type,min_vram_gb,max_price_per_hour,disk_gb,
   image,region}`, `server_dir`, `server_port`, `boot_timeout`,
   `destroy_after_use` (keep true!), `local_tunnel_port`.
+  The three quality gates - `search.min_reliability` (default 0.95),
+  `search.min_inet_down_mbps` (200) and `search.min_cuda` (12.0) - decide which
+  hosts are even considered before price does. Raise the network gate on a fast
+  connection; lower it if Vast keeps answering "no machine matched". A host
+  that hides a figure is still allowed (it is only ranked after the hosts that
+  publish one).
 * `colab.*` / `gradio.*` - `endpoint_env` (IMAGE_ENDPOINT_URL), `api_path`,
   `keepalive_seconds`, `ngrok_header`.
 * `kaggle.*` - `notebook_template`, `output_dir`, `auto_push`, `model`.

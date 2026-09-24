@@ -155,13 +155,25 @@ image:
     mode: "search"
     instance_id: null
     # -- only used when mode: "search" --
+    # WHICH GPU (see docs/06-VAST-AI-GPU.md for the full table):
+    #   "RTX 3090"  24 GB  cheapest serious option (~$0.12-0.22/h). Best value.
+    #   "RTX 4090"  24 GB  fastest per dollar (~$0.29-0.45/h). Default here.
+    #   "A5000"     24 GB  datacenter card, steadier hosts, similar price to 3090
+    #   "RTX 4080"  16 GB  fine for SDXL, tight for FLUX
+    #   "A100"/"H100"      only if you also fine-tune models - overkill for images
+    # 24 GB is the sweet spot: SDXL uses ~10 GB and FLUX.1-dev ~20 GB, so a
+    # 24 GB card can run everything this bot can ask for, on any host.
     search:
-      gpu_type: "RTX 4090"           # RTX 4090 | RTX 3090 | A5000 | RTX 4080
-      min_vram_gb: 16
-      max_price_per_hour: 0.50
-      disk_gb: 32
+      gpu_type: "RTX 4090"
+      min_vram_gb: 24
+      max_price_per_hour: 0.45       # raise to 0.60 if no host matches in your region
+      disk_gb: 45                    # SDXL needs ~15 GB, FLUX ~30 GB + torch wheels
       image: "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
       region: ""                     # "" = anywhere. e.g. "us-west"
+      # --- host quality gates (the cheap machine is often cheap for a reason) ---
+      min_reliability: 0.95          # skip hosts that reboot or vanish mid-render
+      min_inet_down_mbps: 200        # the model download is 7-30 GB; slow hosts waste money
+      min_cuda: 12.0                 # the PyTorch image needs a recent driver
     # -- the server that runs ON the gpu --
     server_dir: "deploy/vast/server" # uploaded to the instance automatically
     server_port: 7860
