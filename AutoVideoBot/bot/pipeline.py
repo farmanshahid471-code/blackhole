@@ -156,12 +156,14 @@ class Pipeline:
     # ==================================================================
     def stage_script(self, *, topic: str | None = None, script_file: Path | None = None,
                      duration: float | None = None, style: str = "",
-                     extra_instructions: str = "") -> dict:
+                     extra_instructions: str = "", reference_video: str = "") -> dict:
         step("STAGE 1 / 10 - SCRIPT")
         self.manifest.start_stage("script")
 
         data: dict | None = None
         mode = None
+        if reference_video and (script_file or not topic):
+            raise ValueError("A YouTube reference is supported only when writing from a topic.")
 
         # ---- A. you supplied a script file -------------------------------
         if script_file:
@@ -208,10 +210,21 @@ class Pipeline:
             if not alive:
                 die(f"LLM is not usable:\n{msg}")
             ok(msg)
+            ref_report = None
+            ref_context = ""
+            if reference_video:
+                from .reference import reference_context, study_reference
+                ref_report = study_reference(reference_video, self.project, self.cfg)
+                ref_context = reference_context(ref_report)
             data = script_stage.generate_script(
                 llm, self.cfg, topic=topic, duration=duration,
                 style=style, extra_instructions=extra_instructions,
+                reference_context=ref_context,
             )
+            if ref_report:
+                data["reference_video"] = {
+                    k: ref_report[k] for k in ("url", "title", "video_id", "has_captions", "vision_analyzed")
+                }
         else:
             die(
                 "Nothing to work from. Give the bot either:\n"
@@ -1327,11 +1340,12 @@ class Pipeline:
     # ==================================================================
     def run_all(self, *, topic: str | None = None, script_file: Path | None = None,
                 duration: float | None = None, style: str = "",
-                extra_instructions: str = "") -> Path:
+                extra_instructions: str = "", reference_video: str = "") -> Path:
         t0 = time.time()
         try:
             self.stage_script(topic=topic, script_file=script_file, duration=duration,
-                              style=style, extra_instructions=extra_instructions)
+                              style=style, extra_instructions=extra_instructions,
+                              reference_video=reference_video)
             self.stage_voice()
             self.stage_timing()
             self.stage_images()

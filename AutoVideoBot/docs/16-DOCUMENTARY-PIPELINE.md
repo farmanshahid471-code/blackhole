@@ -30,7 +30,10 @@ Supply your **own licensed file** or add `--set audio.music.enabled=false`.
 For an LLM-written script, configure a working `llm.provider` and use
 `--topic "What does an event horizon mean?" --duration 90` instead of
 `--script`. The director only chooses from `render/shots.json`; Python
-validates parameters and shot variety and retries an invalid LLM answer once.
+validates parameters and shot variety and retries an invalid LLM answer once. An optional
+`--reference-video` YouTube link can supply caption/story-flow cues and sampled
+visual guidance; see [Reference video](17-REFERENCE-VIDEO.md) for the separate
+vision-model setting and the renderer's fixed-shot limitations.
 JSON mode is supported by existing LLM adapters, but native provider-enforced
 JSON Schema/function calling is not yet uniform across them. Untimed JSON
 uses measured voice duration and `duration_hint_s` as a **minimum** visual hold;

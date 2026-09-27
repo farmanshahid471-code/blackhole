@@ -311,6 +311,7 @@ def cmd_script(args) -> int:
     p.stage_script(
         topic=args.topic, script_file=Path(args.script) if args.script else None,
         duration=args.duration, style=args.style or "", extra_instructions=args.instructions or "",
+        reference_video=args.reference_video or "",
     )
     return 0
 
@@ -347,7 +348,8 @@ def cmd_run(args) -> int:
         )
     t0 = time.time()
     out = p.run_all(topic=topic, script_file=script_file, duration=args.duration,
-                    style=args.style or "", extra_instructions=args.instructions or "")
+                    style=args.style or "", extra_instructions=args.instructions or "",
+                    reference_video=args.reference_video or "")
     p.manifest.log_run("run", time.time() - t0)
     log("")
     log(f"[bold green]Open it here:[/] {out}")
@@ -613,6 +615,8 @@ RE-DO ONE STEP ONLY
     sp.add_argument("--duration", type=float, default=None, help="target length in seconds")
     sp.add_argument("--style", default="", help="extra visual style for every image")
     sp.add_argument("--instructions", default="", help="extra instructions for the LLM")
+    sp.add_argument("--reference-video", default="", metavar="YOUTUBE_URL",
+                    help="optional YouTube reference study (topic mode only; requires yt-dlp)")
     sp.set_defaults(func=cmd_run)
 
     # --- individual stages ------------------------------------------------
@@ -636,6 +640,7 @@ RE-DO ONE STEP ONLY
             sp.add_argument("--duration", type=float, default=None)
             sp.add_argument("--style", default="")
             sp.add_argument("--instructions", default="")
+            sp.add_argument("--reference-video", default="", metavar="YOUTUBE_URL")
             sp.set_defaults(func=cmd_script, script=None)
         else:
             sp.set_defaults(func=cmd_stage, stage=stage)

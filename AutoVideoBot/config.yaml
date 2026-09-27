@@ -77,6 +77,16 @@ visual:
       min_cuda: 12.0
 
 
+# Optional topic-mode YouTube reference. Frame understanding requires a separate
+# vision-capable OpenAI-compatible chat API; without it, only captions and
+# measurable palette/scene changes guide the script. Do not copy footage.
+reference:
+  vision:
+    model: ""                      # e.g. gpt-4o-mini (blank = no vision API calls)
+    base_url_env: "REFERENCE_VISION_BASE_URL" # .env cloud HTTPS or local Ollama /v1
+    api_key_env: "REFERENCE_VISION_API_KEY"
+
+
 # ============================================================================
 # 2. LLM  -  writes the script, the image prompts, titles and description
 # ============================================================================
