@@ -1,0 +1,12 @@
+# Stray media-tool binaries that used to be dropped here (e.g. bin/ffprobe).
+# The bot finds ffmpeg/ffprobe on PATH or via the imageio-ffmpeg pip package -
+# they do not belong in git.
+/bin/
+/ffmpeg
+/ffprobe
+*.exe
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
