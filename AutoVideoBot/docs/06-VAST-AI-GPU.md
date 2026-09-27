@@ -240,6 +240,15 @@ Test-Path "$env:WINDIR\System32\OpenSSH\ssh.exe"
 Test-Path "$env:WINDIR\System32\OpenSSH\scp.exe"
 ```
 
+Before a paid image batch, finish stage 3 (`python main.py voice <project>` then
+`python main.py timing <project>`). If a scene's Edge TTS speech cannot fit its
+LLM timestamp without exceeding `timing.max_speedup`, the updated timing stage
+holds that scene longer rather than trimming the narrator's last words. This
+may make a requested ten-minute film several seconds longer. Stage 4 rejects
+older saved timing reports with overlong, capped narration before renting a GPU;
+re-run stage 3 with the updated `bot/pipeline.py` first. Shorten or edit the
+script yourself if an exact final runtime is essential.
+
 The bot now checks **both** executables before searching/renting, so a missing
 client will not cost a booted GPU. This check does not prove that the network
 can reach the chosen host or that your SSH key is registered with Vast. A

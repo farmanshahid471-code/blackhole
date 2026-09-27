@@ -40,6 +40,30 @@ class VastImagePipelineTests(unittest.TestCase):
             img.generate_many.assert_not_called()
             self.assertFalse(p.manifest.stage_done('images'))
 
+    def test_old_capped_timing_blocks_paid_images_before_provider_contact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p, img = self.setup_pipeline(tmp)
+            p.scenes = [{'id': f's{i:02d}', 'narration': 'a detailed star story ' * 6,
+                         'image_prompt': 'a nebula', 'target_start': (i - 1) * 10,
+                         'target_end': i * 10, 'duration': 10}
+                        for i in range(1, 61)]
+            p.script.data.update({'scenes': p.scenes, 'source': 'topic',
+                                  'requested_duration': 600, 'total_duration': 600})
+            p.script.save()
+            p.manifest.finish_stage('timing')
+            (p.project.audio_dir / 's38_fit.json').write_text(
+                '{"capped": true, "requested_tempo": 1.67, "tempo": 1.35}')
+            with self.assertRaisesRegex(RuntimeError, 's38'):
+                p.stage_images()
+            # Also reject a clipped persisted scene when its fit report has
+            # disappeared but the scene still records its fitted audio length.
+            (p.project.audio_dir / 's38_fit.json').unlink()
+            p.scenes[37]['audio_duration'] = 12
+            with self.assertRaisesRegex(RuntimeError, 's38'):
+                p.stage_images()
+            img.healthcheck.assert_not_called()
+            img.generate_many.assert_not_called()
+
     def test_failed_batch_aborts_once_with_no_placeholders(self):
         with tempfile.TemporaryDirectory() as tmp:
             p, img = self.setup_pipeline(tmp)

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import random
 import re
@@ -60,6 +61,19 @@ from .utils import (
     debug, die, ensure_dir, fail, file_fingerprint, fmt_time, human_bytes, info,
     ok, read_json, retry, stable_hash, step, warn, write_json,
 )
+
+
+def _safe_speech_target(target: float, natural: float, max_speedup: float,
+                        head_seconds: float) -> float:
+    """Minimum scene window preserving speech without exceeding tempo cap.
+
+    A short margin covers codec/FFmpeg rounding. Never shorten a scene here;
+    users who require an exact runtime can shorten narration instead.
+    """
+    if natural <= 0.05 or max_speedup <= 0:
+        return target
+    needed = natural / max_speedup + head_seconds + 0.2
+    return round(max(target, math.ceil(needed * 20) / 20), 3)
 
 
 class Pipeline:
@@ -418,6 +432,14 @@ class Pipeline:
                 sc["target_end"] = float(sc["target_start"]) + target
                 sc["duration"] = round(target, 3)
 
+            if fit and strategy == "pad_then_hold" and natural > 0.05:
+                safe_target = _safe_speech_target(target, natural, max_up, head_ms / 1000.0)
+                if safe_target > target + 0.01:
+                    info(f"  {sid}: extending {target:.2f}s -> {safe_target:.2f}s "
+                         "to preserve the full narration (may lengthen the video)")
+                    target = safe_target
+                    sc["duration"] = round(target, 3)
+
             # Timing must include every scene: a partial narration track would
             # silently desync the final video when --only is used for rerenders.
             # Per-scene caching still skips unchanged audio blocks.
@@ -448,6 +470,19 @@ class Pipeline:
                 sc["tempo"] = 1.0
                 sc["audio_duration"] = round(natural or target, 3)
                 fitted = raw
+
+            if fit and fitted.exists() and sc["audio_duration"] + head_ms / 1000.0 > target + 0.02:
+                # The real fitted file, not just a guessed tempo, is the final
+                # authority. Never silently trim its tail with exact_duration.
+                if strategy != "pad_then_hold":
+                    raise RuntimeError(f"scene {sid}: fitted speech is longer than its "
+                                       "timestamp window. Shorten narration before image generation.")
+                safe_target = _safe_speech_target(target, sc["audio_duration"], 1.0,
+                                                   head_ms / 1000.0)
+                info(f"  {sid}: extending {target:.2f}s -> {safe_target:.2f}s "
+                     "after fitting so no words are cut")
+                target = safe_target
+                sc["duration"] = round(target, 3)
 
             # --- build the per-scene padded audio block --------------------
             block = self.project.audio_dir / f"{sid}_full.wav"
@@ -546,6 +581,26 @@ class Pipeline:
             if requested >= 60:
                 _validate_generated_chunk(self.scenes, requested, False,
                                           chapter=1, total=1)
+                if not self.manifest.stage_done("timing"):
+                    raise RuntimeError("Run voice and timing before renting Vast: "
+                                       "narration has not been checked yet.")
+                too_long = []
+                max_up = float(self.cfg.get("timing.max_speedup", 1.35))
+                for sc in self.scenes:
+                    sid = sc["id"]
+                    report = read_json(self.project.audio_dir / f"{sid}_fit.json", {}) or {}
+                    fitted_seconds = float(sc.get("audio_duration") or 0)
+                    window = float(sc.get("duration") or 0)
+                    if ((report.get("capped") and
+                         float(report.get("requested_tempo") or 0) > max_up + 0.01)
+                            or (fitted_seconds and window and
+                                fitted_seconds + float(self.cfg.get("tts.head_silence_ms", 150)) / 1000.0 > window + 0.02)):
+                        too_long.append(sid)
+                if too_long:
+                    raise RuntimeError("Narration was capped and may be clipped in "
+                                       f"{', '.join(too_long)}. Run the updated timing stage "
+                                       "before renting Vast; do not pay to render "
+                                       "a video with missing speech.")
         img = self.provider("image", name)
         # Rented batch providers are only checked when there is actually work
         # to do. Cached scenes should not require API/network access.
