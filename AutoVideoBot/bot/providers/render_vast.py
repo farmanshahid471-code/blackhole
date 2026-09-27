@@ -31,7 +31,6 @@ class VastRenderProvisioner(VastProvider):
     def _create_instance(self, offer):
         settings = self.setting("image.vast.search", {}) or {}
         body = {
-            "bundle_id": int(offer["id"]),
             "disk": float(settings.get("disk_gb", 35)),
             "image": str(settings.get("image", "node:22-bookworm")),
             "runtype": "ssh_direct",

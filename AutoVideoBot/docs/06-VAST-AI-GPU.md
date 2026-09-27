@@ -101,8 +101,8 @@ a model runs at all is VRAM; what decides how fast is a distant second. So:
 image.vast.mode: existing
 image.vast.instance_id: 12345678
 ```
-The bot starts it if stopped, uses it, and only *stops* (never destroys) it
-at the end.
+The instance must already be **running**. The bot reuses it and leaves it
+running; stop or destroy it manually when you are done to avoid ongoing costs.
 
 ## What runs on the GPU
 
@@ -114,11 +114,20 @@ at the end.
 * `start_server.sh` - idempotent installer + launcher + health waiter.
 
 Because images are generated in ONE batch request, the model loads once per
-video, not once per image.
+video, not once per image. The server binds to loopback on the rental and is
+accessed only through an SSH tunnel (no public image-server port).
 
 ## Money safety (read once, sleep forever)
 
 * `destroy_after_use: true` is the default and the important line.
+* A Vast API/search failure stops stage 4 rather than repeating the failed
+  request for each scene or quietly rendering placeholder cards. The successful
+  voice/timing artifacts remain cached: rerun the same project after fixing
+  the problem. An instance-creation network timeout may have succeeded despite
+  no response: check your Vast dashboard for running rentals **before** retrying.
+* Offer search uses `POST /api/v0/bundles/` with flat JSON filters, and the
+  chosen offer ID goes in `PUT /asks/{offer_id}/`. Only the SSH direct port is
+  needed; the image-server port is not exposed publicly.
 * If the bot crashes mid-run, the instance keeps billing. Recover:
   ```bash
   vastai show instances
@@ -162,7 +171,8 @@ simpler; if you make a batch, renting wins.
 
 This is a Vast.ai edge/security challenge, **not proof that your API key is
 wrong**. The bot now tries Vast's documented `console.vast.ai` API host first;
-for read-only checks only, it may try the other Vast first-party host once.
+for read-only checks and offer searches only, it may try the other Vast
+first-party host once.
 It does not replay create/delete operations or try to solve CAPTCHAs. If both
 hosts challenge you, sign in to Vast.ai in your own browser and complete any
 account verification, then retry from the **same machine/network**. If the

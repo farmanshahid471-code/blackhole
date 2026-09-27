@@ -40,7 +40,6 @@ Two ways to use it (config.yaml -> image.vast.mode):
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -199,6 +198,9 @@ class VastProvider(ImageProvider):
 
     supports_batch = True
     supports_parallel = False
+    # A failed rental/search is a configuration/API error, not an image that
+    # can be repaired by retrying the identical query once per scene.
+    batch_error_fatal = True
 
     def __init__(self, cfg, project=None):
         super().__init__(cfg, project)
@@ -229,6 +231,9 @@ class VastProvider(ImageProvider):
         import requests
         headers = {"Authorization": f"Bearer {self._key()}", "Accept": "application/json"}
         short = path.split("?")[0]
+        # POST /bundles is a read-only search. Do not replay instance-creating
+        # PUTs (or DELETEs) after an ambiguous timeout or server error.
+        safe_replay = method.upper() == "GET" or (method.upper() == "POST" and short == "/bundles/")
         bases = (self._api_base,) if self._api_base else API_BASES
         last: RuntimeError | None = None
         challenge_error: VastChallengeError | None = None
@@ -244,13 +249,20 @@ class VastProvider(ImageProvider):
             except Exception as e:
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> network problem: {str(e)[:160]}")
+                if not safe_replay:
+                    if method.upper() == "PUT" and short.startswith("/asks/"):
+                        last = RuntimeError(f"{last}. Creation may have succeeded; check "
+                                            "https://cloud.vast.ai/instances/ before retrying.")
+                    raise last from e
                 continue
             if r.status_code in (301, 302, 303, 307, 308):
                 # a redirect to another host would strip our Authorization
                 # header - just talk to the other host directly instead
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> HTTP {r.status_code} "
-                    f"redirect at {base} - trying the other API host")
+                    f"redirect at {base} - refusing automatic redirects")
+                if not safe_replay:
+                    raise last
                 continue
             if r.status_code >= 400:
                 # A 403 with code=challenge comes from Vast's edge protection,
@@ -274,7 +286,7 @@ class VastProvider(ImageProvider):
                         challenge_error = last
                         # One other first-party endpoint can be tried for a
                         # read-only request, but never replay a billed mutation.
-                        if method.upper() == "GET":
+                        if safe_replay:
                             continue
                         raise last
                 body_txt = (r.text or "").strip().replace("\n", " ")[:200]
@@ -288,7 +300,7 @@ class VastProvider(ImageProvider):
                             "https://cloud.vast.ai/billing/")
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> HTTP {r.status_code}: {body_txt}{hint}")
-                if r.status_code not in (404, 410, 500, 502, 503):
+                if not safe_replay or r.status_code not in (404, 410, 500, 502, 503):
                     # A challenge from the documented endpoint must not be
                     # misreported as a bad key because the fallback disagrees.
                     raise challenge_error or last
@@ -344,18 +356,26 @@ class VastProvider(ImageProvider):
 
         query = {
             "gpu_name": {"eq": gpu},
-            "gpu_ram": {"gte": min_vram * 1024},        # Vast reports VRAM in MB
+            "gpu_ram": {"gte": int(min_vram * 1024)},  # Vast REST API uses MB
             "dph_total": {"lte": max_price},
             "disk_space": {"gte": disk},
+            "direct_port_count": {"gte": int(s.get("min_direct_ports", 1))},
             "num_gpus": {"eq": 1},
             "rentable": {"eq": True},
+            "rented": {"eq": False},
             "verified": {"eq": True},
             "order": [["dph_total", "asc"]],
             "type": "on-demand",
+            "limit": 100,
         }
         info(f"  searching Vast.ai for {gpu} (>= {min_vram:.0f} GB VRAM, "
              f"<= ${max_price:.2f}/h) ...")
-        data = self._api("GET", "/bundles/?" + json.dumps({"q": query}), timeout=90)
+        # Vast's documented search is POST /bundles/ with a *flat JSON body*.
+        # The old GET /bundles/?{"q": ...} sent an invalid query string and
+        # reliably returned HTTP 400 before renting any instance.
+        data = self._api("POST", "/bundles/", query, timeout=90)
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(f"Vast.ai offer search failed: {str(data.get('msg') or data['error'])[:200]}")
         offers = data.get("offers") if isinstance(data, dict) else None
         if not offers:
             raise RuntimeError(
@@ -389,15 +409,11 @@ class VastProvider(ImageProvider):
 
     def _create_instance(self, offer: dict[str, Any]) -> dict[str, Any]:
         s = self.setting("image.vast.search", {}) or {}
-        v = self.setting("image.vast", {}) or {}
         body = {
-            "bundle_id": int(offer["id"]),
             "disk": float(s.get("disk_gb", 32)),
             "image": str(s.get("image", "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")),
-            "runtype": "ssh",
+            "runtype": "ssh_direct",
             "label": "autovideobot",
-            # The server needs a port reachable from your PC; Vast maps it for us.
-            "env": {"-p 7860:7860": "1"},
         }
         region = str(s.get("region") or "")
         if region:
@@ -480,7 +496,9 @@ class VastProvider(ImageProvider):
                 capture=True, check=True, timeout=120, quiet=True)
         run_cmd(self._scp_base() + ["-r", str(local), f"{self._ssh['user']}@{self._ssh['host']}:{remote}"],
                 capture=True, check=True, timeout=900, quiet=True)
-        return remote
+        # scp -r DIRECTORY REMOTE_EXISTING_DIRECTORY creates a nested folder.
+        # Start the server in that nested folder, not its parent.
+        return f"{remote}/{local.name}"
 
     def _start_server(self, remote_dir: str) -> int:
         """Start the server on the instance and open a local tunnel to it."""

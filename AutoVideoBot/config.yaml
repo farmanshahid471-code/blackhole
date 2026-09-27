@@ -70,6 +70,7 @@ visual:
       min_vram_gb: 16
       max_price_per_hour: 0.50
       disk_gb: 35
+      min_direct_ports: 1
       image: "node:22-bookworm" # apt installs system Chromium on first use
       min_reliability: 0.95
       min_inet_down_mbps: 100
@@ -196,6 +197,7 @@ image:
       min_vram_gb: 24
       max_price_per_hour: 0.45       # raise to 0.60 if no host matches in your region
       disk_gb: 45                    # SDXL needs ~15 GB, FLUX ~30 GB + torch wheels
+      min_direct_ports: 1           # SSH direct only; image server uses a private SSH tunnel
       image: "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
       region: ""                     # "" = anywhere. e.g. "us-west"
       # --- host quality gates (the cheap machine is often cheap for a reason) ---

@@ -525,7 +525,10 @@ class Pipeline:
 
         name = str(self.cfg.get("image.provider", "pollinations"))
         img = self.provider("image", name)
-        alive, msg = img.healthcheck()
+        # Rented batch providers are only checked when there is actually work
+        # to do. Cached scenes should not require API/network access.
+        fatal_batch = bool(getattr(img, "batch_error_fatal", False))
+        alive, msg = (True, "") if fatal_batch else img.healthcheck()
         if not alive:
             warn(f"image provider says: {msg}")
             if str(self.cfg.get("system.on_error", "continue")) == "abort":
@@ -602,6 +605,12 @@ class Pipeline:
             self.manifest.finish_stage("images", {"count": len(self.scenes)})
             return self.scenes
 
+        if fatal_batch:
+            alive, msg = img.healthcheck()
+            if not alive:
+                raise RuntimeError(f"{name} image provider is unavailable: {msg}")
+            ok(msg)
+
         # ------------------------------------------------------------------
         # DISPATCH: some providers like receiving every prompt at once (Vast,
         # Colab, Replicate). Others are happiest one image at a time, and for
@@ -614,10 +623,17 @@ class Pipeline:
             try:
                 results = img.generate_many(clean_jobs)
             except Exception as e:
+                if fatal_batch:
+                    self.close_providers()  # never leave a rented GPU billing
+                    raise RuntimeError(f"{name} batch failed; no per-scene retries: {e}") from e
                 fail(f"batch generation failed: {str(e)[:400]} - trying one at a time")
                 results = []
 
         if len(results) != len(jobs):
+            if fatal_batch:
+                self.close_providers()
+                raise RuntimeError(f"{name} returned {len(results)} images for {len(jobs)} scenes; "
+                                   "not retrying a rented GPU per scene")
             results = self._generate_serial_or_threaded(img, jobs, results)
 
         for j, res in zip(jobs, results):
@@ -625,6 +641,10 @@ class Pipeline:
                 self.manifest.mark(j["_key"], res)
                 self.scenes[j["_index"]]["image_path"] = str(res)
             else:
+                if fatal_batch:
+                    self.close_providers()
+                    raise RuntimeError(f"{name} returned no image for {j['scene_id']}; "
+                                       "stopping rather than publishing a placeholder")
                 fail(f"  {j['scene_id']}: no image produced")
                 if str(self.cfg.get("system.on_error", "continue")) == "abort":
                     self.close_providers()

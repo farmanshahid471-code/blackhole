@@ -183,6 +183,8 @@ class ProvisionTests(unittest.TestCase):
                 provisioner._create_instance({'id':77})
             self.assertEqual(sent[0][2]['runtype'],'ssh_direct')
             self.assertNotIn('env',sent[0][2])
+            self.assertNotIn('bundle_id',sent[0][2])
+            self.assertEqual(sent[0][1], '/asks/77/')
             self.assertTrue(provisioner._owns_instance)
             self.assertEqual(provisioner._instance_id,'123')
 
