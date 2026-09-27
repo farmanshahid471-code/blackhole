@@ -632,6 +632,8 @@ class Pipeline:
 
         jobs: list[dict] = []
         kept_offline = 0
+        cached_count = 0
+        excluded_count = 0
         for i, sc in enumerate(self.scenes):
             sid = sc["id"]
             out = self.project.scene_image(sid, "jpg")
@@ -653,9 +655,11 @@ class Pipeline:
             key = self._cache_key("image", sid, params)
             if self._skip(key, out):
                 sc["image_path"] = str(out)
+                cached_count += 1
                 debug(f"image {sid}: cached")
                 continue
             if not self._wanted(sid):
+                excluded_count += 1
                 if out.exists():
                     sc["image_path"] = str(out)
                 continue
@@ -676,10 +680,11 @@ class Pipeline:
         if kept_offline:
             info(f"  (provider still unreachable: kept {kept_offline} picture(s) already "
                  f"on disk - they are retried as soon as it answers again)")
-        info(f"{len(jobs)} image(s) to generate ({len(self.scenes) - len(jobs)} already cached)")
+        info(f"{len(jobs)} image(s) to generate ({cached_count} cached, "
+             f"{excluded_count} skipped by --only, {kept_offline} kept while offline)")
         if not jobs:
             self._link_images()
-            self.manifest.finish_stage("images", {"count": len(self.scenes)})
+            self._finish_images_stage(count=0)
             return self.scenes
 
         if fatal_batch:
@@ -729,8 +734,14 @@ class Pipeline:
 
         self._link_images()
         self.script.save()
-        self.manifest.finish_stage("images", {"count": len(jobs)})
+        self._finish_images_stage(count=len(jobs))
         return self.scenes
+
+    def _finish_images_stage(self, *, count: int) -> None:
+        if self.only and any(not sc.get("image_path") for sc in self.scenes):
+            info("partial image test complete; unselected scenes remain ungenerated")
+            return  # the manifest must not call a one-scene test a full stage
+        self.manifest.finish_stage("images", {"count": count})
 
     def _generate_serial_or_threaded(self, img, jobs: list[dict],
                                      partial: list[Any]) -> list[Any]:
@@ -785,7 +796,8 @@ class Pipeline:
                 sc["image_path"] = str(found)
             else:
                 sc["image_path"] = None
-                missing.append(sc["id"])
+                if self._wanted(sc["id"]):
+                    missing.append(sc["id"])
         if missing:
             warn(f"no image for scene(s): {', '.join(missing)} - "
                  f"they will use a generated placeholder card")
