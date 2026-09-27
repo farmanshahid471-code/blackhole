@@ -19,7 +19,7 @@ from typing import Callable
 from ..config import Config
 from ..paths import ROOT
 from ..utils import info
-from .image_vast import VastProvider
+from .image_vast import VastProvider, find_openssh_tool
 from .render_remotion import RemotionRenderer
 
 REMOTE = "/workspace/blackhole_doc"
@@ -29,6 +29,7 @@ class VastRenderProvisioner(VastProvider):
     """Create a direct SSH container without opening image-server ports."""
 
     def _create_instance(self, offer):
+        self._require_ssh_tools()  # fail before creating a billable instance
         settings = self.setting("image.vast.search", {}) or {}
         body = {
             "disk": float(settings.get("disk_gb", 35)),
@@ -63,8 +64,7 @@ class VastRemotionRenderer(RemotionRenderer):
         self.known_hosts = project.tmp_dir / "vast_render_known_hosts"
 
     def healthcheck(self):
-        if not shutil.which("ssh") or not shutil.which("scp"):
-            raise RuntimeError("Vast rendering needs OpenSSH ssh and scp on PATH")
+        self.vast._require_ssh_tools()
         if not self.cfg.env("visual.vast.api_key_env"):
             raise RuntimeError("Set VAST_API_KEY in .env for visual.vast rendering")
         mode = self.cfg.get("visual.vast.mode", "existing")
@@ -102,15 +102,27 @@ class VastRemotionRenderer(RemotionRenderer):
                 "-o", f"UserKnownHostsFile={self.known_hosts}", "-o", "ConnectTimeout=30"]
 
     def _ssh(self, command: str, *, timeout=3600, check=True) -> subprocess.CompletedProcess:
-        proc = subprocess.run(["ssh", *self._ssh_options(), "-p", str(self._port),
+        proc = subprocess.run([self.vast._ssh_exe or find_openssh_tool("ssh"), *self._ssh_options(), "-p", str(self._port),
                                self._remote, command], capture_output=True, text=True, timeout=timeout)
         if check and proc.returncode:
             raise RuntimeError(f"Remote renderer failed ({proc.returncode}): {proc.stderr[-2500:]} {proc.stdout[-1500:]}")
         return proc
 
     def _scp(self, src: str, dst: str, *, timeout=900):
-        proc = subprocess.run(["scp", *self._ssh_options(), "-P", str(self._port),
-                               src, dst], capture_output=True, text=True, timeout=timeout)
+        # Pass local paths relative to their working directory. In particular,
+        # Windows SCP builds may mistake F:\folder for remote-host syntax.
+        remote_source = src.startswith(f"{self._remote}:")
+        local = Path(dst if remote_source else src)
+        cwd = local.parent if local.is_absolute() else None
+        if cwd is not None:
+            if remote_source:
+                dst = local.name
+            else:
+                src = local.name
+        proc = subprocess.run(
+            [self.vast._scp_exe or find_openssh_tool("scp"), *self._ssh_options(),
+             "-P", str(self._port), src, dst], cwd=str(cwd) if cwd else None,
+            capture_output=True, text=True, timeout=timeout)
         if proc.returncode:
             raise RuntimeError(f"SCP failed: {proc.stderr[-1500:]}")
 

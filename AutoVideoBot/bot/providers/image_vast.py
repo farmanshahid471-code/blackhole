@@ -43,6 +43,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -67,6 +68,30 @@ API_BASES = (
 class VastChallengeError(RuntimeError):
     """A Vast edge challenge is not evidence that the API key is invalid."""
 
+
+def find_openssh_tool(name: str) -> str:
+    """Locate ssh/scp, including Windows' built-in OpenSSH when PATH omits it."""
+    found = shutil.which(name)
+    if found:
+        return found
+    if sys.platform == "win32":
+        root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or "C:/Windows"
+        for folder in ("System32", "Sysnative"):
+            exe = Path(root) / folder / "OpenSSH" / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
+        raise RuntimeError(
+            f"OpenSSH {name}.exe is missing. Install Windows 'OpenSSH Client' "
+            "(Settings > System > Optional features > Add a feature), then "
+            "restart this app. In a new PowerShell window, check 'ssh -V' "
+            "and 'where.exe scp'. Do this before renting another Vast GPU."
+        )
+    raise RuntimeError(
+        f"OpenSSH '{name}' is missing. Install the OpenSSH client "
+        "(Ubuntu/Debian: sudo apt install openssh-client; macOS: use the "
+        "built-in tools), then check 'ssh -V' and 'command -v scp' before "
+        "renting another Vast GPU."
+    )
 
 
 def _fmt_metric(offer: dict[str, Any], *keys: str) -> str:
@@ -210,6 +235,13 @@ class VastProvider(ImageProvider):
         self._local_port: int = 0
         self._owns_instance = False
         self._api_base: str | None = None   # which API host answered last time
+        self._ssh_exe: str | None = None
+        self._scp_exe: str | None = None
+
+    def _require_ssh_tools(self) -> None:
+        """Fail before renting: a running GPU bills even without local SSH."""
+        self._ssh_exe = find_openssh_tool("ssh")
+        self._scp_exe = find_openssh_tool("scp")
 
     # ==================================================================
     # API plumbing
@@ -318,6 +350,10 @@ class VastProvider(ImageProvider):
     # ==================================================================
     def healthcheck(self) -> tuple[bool, str]:
         try:
+            self._require_ssh_tools()
+        except RuntimeError as e:
+            return False, str(e)
+        try:
             key = self._key()
         except SystemExit:
             return False, "VAST_API_KEY is empty in .env"
@@ -408,6 +444,7 @@ class VastProvider(ImageProvider):
         return best
 
     def _create_instance(self, offer: dict[str, Any]) -> dict[str, Any]:
+        self._require_ssh_tools()  # protect direct callers that skipped healthcheck
         s = self.setting("image.vast.search", {}) or {}
         body = {
             "disk": float(s.get("disk_gb", 32)),
@@ -470,17 +507,24 @@ class VastProvider(ImageProvider):
     # ==================================================================
     # 3. get the code onto the machine
     # ==================================================================
+    @staticmethod
+    def _null_hosts_file() -> str:
+        # Windows OpenSSH uses the NUL device, not Unix's /dev/null.
+        return "NUL" if sys.platform == "win32" else "/dev/null"
+
     def _scp_base(self) -> list[str]:
         assert self._ssh
         return [
-            "scp", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._scp_exe or find_openssh_tool("scp"), "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-P", str(self._ssh["port"]),
         ]
 
     def _ssh_base(self) -> list[str]:
         assert self._ssh
         return [
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._ssh_exe or find_openssh_tool("ssh"), "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-o", "ConnectTimeout=20", "-p", str(self._ssh["port"]),
         ]
 
@@ -494,8 +538,10 @@ class VastProvider(ImageProvider):
         run_cmd(self._ssh_base() + [f"{self._ssh['user']}@{self._ssh['host']}",
                                     f"mkdir -p {remote}"],
                 capture=True, check=True, timeout=120, quiet=True)
-        run_cmd(self._scp_base() + ["-r", str(local), f"{self._ssh['user']}@{self._ssh['host']}:{remote}"],
-                capture=True, check=True, timeout=900, quiet=True)
+        # Run scp from the directory containing the source: some Windows/Git
+        # OpenSSH builds parse the colon in F:\path as a remote host separator.
+        run_cmd(self._scp_base() + ["-r", local.name, f"{self._ssh['user']}@{self._ssh['host']}:{remote}"],
+                cwd=local.parent, capture=True, check=True, timeout=900, quiet=True)
         # scp -r DIRECTORY REMOTE_EXISTING_DIRECTORY creates a nested folder.
         # Start the server in that nested folder, not its parent.
         return f"{remote}/{local.name}"
@@ -517,8 +563,9 @@ class VastProvider(ImageProvider):
         self._local_port = self._free_port()
         info(f"  opening the tunnel  localhost:{self._local_port} -> gpu:{port} ...")
         ssh_cmd = [
-            "ssh", "-N",
-            "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._ssh_exe or find_openssh_tool("ssh"), "-N",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-o", "ServerAliveInterval=15", "-o", "ExitOnForwardFailure=yes",
             "-p", str(self._ssh["port"]),
             "-L", f"{self._local_port}:127.0.0.1:{port}",
@@ -561,6 +608,7 @@ class VastProvider(ImageProvider):
         """Boot everything if needed and return the base URL to talk to."""
         if self._local_port:
             return f"http://127.0.0.1:{self._local_port}"
+        self._require_ssh_tools()  # no search/rental without both local clients
 
         mode = str(self.setting("image.vast.mode", "search")).lower()
         if mode == "existing":

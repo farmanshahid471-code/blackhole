@@ -168,6 +168,29 @@ class RemoteTests(unittest.TestCase):
             self.assertEqual(output[0].read_bytes(),b'clip')
             self.assertFalse(output[1].exists())
 
+class WindowsSCPTests(unittest.TestCase):
+    def test_vast_render_scp_uses_relative_local_names(self):
+        import subprocess
+        from bot.providers.render_vast import VastRemotionRenderer
+        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'VAST_API_KEY': 'fake'}):
+            cfg = Config({'visual': {'vast': {'api_key_env': 'VAST_API_KEY',
+                                             'mode': 'existing', 'instance_id': '1'}}})
+            p = Project(Path(temp), 'video').create()
+            renderer = VastRemotionRenderer(cfg, p)
+            renderer._remote, renderer._port = 'root@host', 12345
+            renderer.vast._scp_exe = '/fake/scp.exe'
+            source = p.tmp_dir / 'source.tar.gz'
+            with patch('bot.providers.render_vast.subprocess.run',
+                       return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+                renderer._scp(str(source), 'root@host:/workspace/source.tar.gz')
+                self.assertEqual(run.call_args.args[0][-2:], ['source.tar.gz', 'root@host:/workspace/source.tar.gz'])
+                self.assertEqual(run.call_args.kwargs['cwd'], str(source.parent))
+                dest = p.tmp_dir / 'clip.mp4'
+                renderer._scp('root@host:/workspace/clip.mp4', str(dest))
+                self.assertEqual(run.call_args.args[0][-2:], ['root@host:/workspace/clip.mp4', 'clip.mp4'])
+                self.assertEqual(run.call_args.kwargs['cwd'], str(dest.parent))
+
+
 class ProvisionTests(unittest.TestCase):
     def test_search_instance_has_no_image_server_port_and_is_owned(self):
         from bot.providers.render_vast import VastRenderProvisioner

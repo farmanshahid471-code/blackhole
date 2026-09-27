@@ -1,6 +1,8 @@
 """Vast edge challenges are different from bad keys; no live API calls."""
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from bot.config import Config
@@ -76,6 +78,61 @@ class FallbackTests(unittest.TestCase):
             good,msg=VastProvider(cfg,None).healthcheck()
         self.assertFalse(good)
         self.assertIn('bom1::retry',msg)
+
+class VastOpenSSHTests(unittest.TestCase):
+    def test_windows_uses_system32_when_path_omits_openssh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / 'System32' / 'OpenSSH'
+            directory.mkdir(parents=True)
+            for name in ('ssh', 'scp'):
+                (directory / f'{name}.exe').touch()
+            with patch('bot.providers.image_vast.shutil.which', return_value=None), \
+                 patch('bot.providers.image_vast.sys.platform', 'win32'), \
+                 patch.dict(os.environ, {'SystemRoot': tmp}):
+                p = VastProvider(Config({'image': {'vast': {}}}), None)
+                p._require_ssh_tools()
+                self.assertEqual(p._ssh_exe, str(directory / 'ssh.exe'))
+                self.assertEqual(p._scp_exe, str(directory / 'scp.exe'))
+                p._ssh = {'host': 'example.com', 'port': 22, 'user': 'root'}
+                self.assertEqual(p._ssh_base()[0], str(directory / 'ssh.exe'))
+                self.assertEqual(p._scp_base()[0], str(directory / 'scp.exe'))
+                self.assertIn('UserKnownHostsFile=NUL', p._ssh_base())
+                with patch('bot.providers.image_vast.run_cmd') as command:
+                    p._upload_server()
+                self.assertEqual(command.call_args.kwargs['cwd'].name, 'vast')
+                self.assertEqual(command.call_args.args[0][-2], 'server')
+                with patch.object(p, '_free_port', return_value=12345), \
+                     patch('bot.providers.image_vast.subprocess.Popen') as popen, \
+                     patch('bot.providers.image_vast.run_cmd'):
+                    p._start_server('/workspace/image_server/server')
+                self.assertEqual(popen.call_args.args[0][0], str(directory / 'ssh.exe'))
+
+    def test_missing_clients_report_windows_install_steps_without_api_calls(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch('bot.providers.image_vast.shutil.which', return_value=None), \
+             patch('bot.providers.image_vast.sys.platform', 'win32'), \
+             patch.dict(os.environ, {'SystemRoot': tmp, 'VAST_API_KEY': 'fake-key'}), \
+             patch('requests.request') as requests:
+            p = VastProvider(Config({'image': {'vast': {'api_key_env': 'VAST_API_KEY'}}}), None)
+            ready, message = p.healthcheck()
+            self.assertFalse(ready)
+            self.assertIn('OpenSSH Client', message)
+            self.assertIn('ssh.exe', message)
+            with self.assertRaisesRegex(RuntimeError, 'OpenSSH Client'):
+                p._ensure_ready()
+            with self.assertRaisesRegex(RuntimeError, 'OpenSSH Client'):
+                p._create_instance({'id': 123})
+            requests.assert_not_called()  # no search or billable instance
+
+    def test_missing_only_scp_is_caught_before_rental(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch('bot.providers.image_vast.shutil.which',
+                   side_effect=lambda name: '/usr/bin/ssh' if name == 'ssh' else None), \
+             patch('bot.providers.image_vast.sys.platform', 'win32'), \
+             patch.dict(os.environ, {'SystemRoot': tmp}):
+            with self.assertRaisesRegex(RuntimeError, 'scp.exe'):
+                VastProvider(Config({'image': {'vast': {}}}), None)._require_ssh_tools()
+
 
 class VastSearchTests(unittest.TestCase):
     def provider(self):

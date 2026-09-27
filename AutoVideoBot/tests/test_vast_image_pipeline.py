@@ -2,11 +2,12 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from bot.config import Config
 from bot.paths import Project
 from bot.pipeline import Pipeline
+from bot.providers.image_vast import VastProvider
 
 
 class VastImagePipelineTests(unittest.TestCase):
@@ -52,6 +53,19 @@ class VastImagePipelineTests(unittest.TestCase):
                 p.stage_images()
             img.generate.assert_not_called()
             img.teardown.assert_called_once()
+
+    def test_missing_ssh_aborts_pipeline_before_vast_api_or_rental(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p, _ = self.setup_pipeline(tmp)
+            p._providers['image:vast'] = VastProvider(p.cfg, p.project)
+            with patch('bot.providers.image_vast.find_openssh_tool',
+                       side_effect=RuntimeError('OpenSSH ssh.exe missing')), \
+                 patch('requests.request') as req:
+                with self.assertRaisesRegex(RuntimeError, 'OpenSSH ssh.exe missing'):
+                    p.stage_images()
+            req.assert_not_called()
+            self.assertFalse(p.manifest.stage_done('images'))
+            self.assertFalse(any(p.project.images_dir.glob('*.jpg')))
 
     def test_already_cached_scenes_need_no_api(self):
         with tempfile.TemporaryDirectory() as tmp:

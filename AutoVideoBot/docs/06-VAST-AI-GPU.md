@@ -30,7 +30,8 @@ At $0.35/h that is **about $0.02-0.08 per video**.
    * Linux/macOS/WSL: `curl -fsSL https://vast.ai/install.sh | bash`
    * Windows: `pip install vastai`
    * then `vastai set api-key YOUR_KEY` and `vastai search offers --limit 3`
-4. Make sure `ssh -V` works (Windows 10/11 and macOS have OpenSSH built in).
+4. Make sure both `ssh -V` and `scp` are available **before renting**;
+   Windows' OpenSSH Client is an optional feature (see Windows section below).
 5. `config.yaml`:
    ```yaml
    image:
@@ -181,3 +182,39 @@ support, this bot, or anyone in chat your raw API key. The official Vast CLI
 (`vastai show user`) can independently confirm whether that machine/network
 can reach the API. See https://docs.vast.ai/api-reference/authentication for
 the documented API host and authentication format.
+
+## Windows: check OpenSSH **before** renting
+
+The Vast CLI (`pip install vastai`) does **not** install the local `ssh` and
+`scp` clients that upload the image server and open its private tunnel. On
+Windows, open PowerShell and check:
+
+```powershell
+ssh -V
+Get-Command scp
+```
+
+If missing, install **OpenSSH Client** (not OpenSSH Server) in **Settings >
+Optional features > Add a feature**, or run the following in an
+Administrator PowerShell window:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+Close and reopen the terminal and the bot, then check again. If Windows has
+OpenSSH installed but it is absent from PATH, the bot also looks for both
+`ssh.exe` and `scp.exe` under `%WINDIR%\System32\OpenSSH` (including the
+Sysnative view for 32-bit Python). You can verify those files with:
+
+```powershell
+Test-Path "$env:WINDIR\System32\OpenSSH\ssh.exe"
+Test-Path "$env:WINDIR\System32\OpenSSH\scp.exe"
+```
+
+The bot now checks **both** executables before searching/renting, so a missing
+client will not cost a booted GPU. This check does not prove that the network
+can reach the chosen host or that your SSH key is registered with Vast; those
+can only be verified by an actual connection. When using `mode: existing`,
+you can test connectivity without starting a **new** rental. If a run fails,
+check the Vast dashboard for instances still billing before trying again.
