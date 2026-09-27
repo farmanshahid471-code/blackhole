@@ -88,15 +88,29 @@ def find_openssh_tool(name: str) -> str:
             exe = Path(program_files) / "OpenSSH" / f"{name}.exe"
             if exe.is_file():
                 return str(exe)
+        # Standalone Win32-OpenSSH ZIP needs no MSI and can live on the same
+        # drive as AutoVideoBot, e.g. F:\Tools\OpenSSH-Win64. The explicit
+        # directory also works when the ZIP is stored elsewhere. Do this
+        # before any Vast API search or billable instance creation.
+        portable = os.environ.get("AVB_OPENSSH_DIR")
+        locations = ([Path(portable)] if portable else [])
+        if ROOT.drive:
+            locations.append(Path(ROOT.anchor) / "Tools" / "OpenSSH-Win64")
+        for directory in locations:
+            exe = directory / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
         version = getattr(sys, "getwindowsversion", None)
         build = version().build if callable(version) else 0
         if 0 < build < 17763:
             raise RuntimeError(
                 f"OpenSSH {name}.exe is missing. Windows build {build} predates "
                 "the optional OpenSSH Client (requires Windows 10 build 17763/1809). "
-                "Upgrade Windows or install the standalone Win32-OpenSSH "
-                "client-only MSI from https://github.com/PowerShell/Win32-OpenSSH/releases. "
-                "Check BOTH ssh.exe and scp.exe before renting another Vast GPU."
+                "Use the portable Win32-OpenSSH ZIP from "
+                "https://github.com/PowerShell/Win32-OpenSSH/releases, "
+                "extract it to the bot drive's Tools/OpenSSH-Win64 folder "
+                "(e.g. F:/Tools/OpenSSH-Win64), or set AVB_OPENSSH_DIR to its "
+                "folder. Check BOTH ssh.exe and scp.exe before renting another Vast GPU."
             )
         raise RuntimeError(
             f"OpenSSH {name}.exe is missing. Install Windows 'OpenSSH Client' "

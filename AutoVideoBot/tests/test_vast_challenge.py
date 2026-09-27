@@ -125,6 +125,51 @@ class VastOpenSSHTests(unittest.TestCase):
                 self.assertEqual(p._ssh_exe, str(directory / 'ssh.exe'))
                 self.assertEqual(p._scp_exe, str(directory / 'scp.exe'))
 
+    def test_start_batch_adds_portable_zip_only_when_both_tools_exist(self):
+        start = (Path(__file__).resolve().parents[1] / 'START-WINDOWS.bat').read_text()
+        self.assertIn(r'%~d0\Tools\OpenSSH-Win64', start)
+        self.assertIn(r'if exist "%PORTABLE_SSH%\ssh.exe" if exist "%PORTABLE_SSH%\scp.exe"', start)
+        self.assertIn('set "PATH=%PORTABLE_SSH%;%PATH%"', start)
+
+    def test_portable_zip_is_found_with_explicit_directory_and_no_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / 'portable SSH'
+            directory.mkdir()
+            for name in ('ssh', 'scp'):
+                (directory / f'{name}.exe').touch()
+            with patch('bot.providers.image_vast.shutil.which', return_value=None), \
+                 patch('bot.providers.image_vast.sys.platform', 'win32'), \
+                 patch('bot.providers.image_vast.sys.getwindowsversion',
+                       create=True, return_value=SimpleNamespace(build=15063)), \
+                 patch.dict(os.environ, {'AVB_OPENSSH_DIR': str(directory),
+                                         'SystemRoot': str(Path(tmp) / 'win'),
+                                         'ProgramFiles': str(Path(tmp) / 'program')}), \
+                 patch('requests.request') as requests:
+                p = VastProvider(Config({'image': {'vast': {}}}), None)
+                p._require_ssh_tools()
+                self.assertEqual(p._ssh_exe, str(directory / 'ssh.exe'))
+                self.assertEqual(p._scp_exe, str(directory / 'scp.exe'))
+                requests.assert_not_called()  # preflight cannot rent
+
+    def test_portable_zip_is_found_on_bot_drive_without_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / 'Tools' / 'OpenSSH-Win64'
+            directory.mkdir(parents=True)
+            for name in ('ssh', 'scp'):
+                (directory / f'{name}.exe').touch()
+            # Simulate a Windows ROOT.drive/anchor on Linux.
+            with patch('bot.providers.image_vast.shutil.which', return_value=None), \
+                 patch('bot.providers.image_vast.sys.platform', 'win32'), \
+                 patch('bot.providers.image_vast.ROOT',
+                       SimpleNamespace(drive='F:', anchor=tmp)), \
+                 patch.dict(os.environ, {'AVB_OPENSSH_DIR': '',
+                                         'SystemRoot': str(Path(tmp) / 'win'),
+                                         'ProgramFiles': str(Path(tmp) / 'program')}):
+                p = VastProvider(Config({'image': {'vast': {}}}), None)
+                p._require_ssh_tools()
+                self.assertEqual(p._ssh_exe, str(directory / 'ssh.exe'))
+                self.assertEqual(p._scp_exe, str(directory / 'scp.exe'))
+
     def test_old_windows_build_explains_why_optional_feature_cannot_install(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch('bot.providers.image_vast.shutil.which', return_value=None), \
@@ -139,7 +184,7 @@ class VastOpenSSHTests(unittest.TestCase):
             self.assertFalse(ready)
             self.assertIn('15063', message)
             self.assertIn('17763', message)
-            self.assertIn('standalone Win32-OpenSSH', message)
+            self.assertIn('portable Win32-OpenSSH', message)
             requests.assert_not_called()
 
     def test_missing_clients_report_windows_install_steps_without_api_calls(self):

@@ -209,20 +209,27 @@ Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 ```
 
 On an **older Windows build**, the preferred long-term fix is a supported
-Windows upgrade. Alternatively, try the official
-[Win32-OpenSSH releases](https://github.com/PowerShell/Win32-OpenSSH/releases)
-client-only **64-bit MSI** (the project documents installation on older
-Windows). In an Administrator PowerShell window, from the folder containing
-the downloaded MSI, run `msiexec /i .\<downloaded-file>.msi ADDLOCAL=Client`
-using its **actual filename**. Do **not** install the Server component: this
-bot only needs outbound SSH and SCP. The bot checks `%ProgramFiles%\OpenSSH`
-for both clients even if the MSI does not update PATH. Before renting, verify:
+Windows upgrade. The portable **Win32-OpenSSH ZIP** from the official
+[releases](https://github.com/PowerShell/Win32-OpenSSH/releases) also works
+without installing anything on C:. Extract it to `F:\Tools\OpenSSH-Win64`
+when the bot is on F:. The updated `START-WINDOWS.bat` automatically prepends
+`<bot drive>:\Tools\OpenSSH-Win64` to its own PATH when **both** clients
+exist, so double-clicking the batch file works; a temporary `$env:Path`
+changed in PowerShell does **not** carry over to a separately double-clicked
+app. The Vast provider also checks this same-drive folder even when starting
+from another launcher. To use a different folder, set `AVB_OPENSSH_DIR` to its
+full path before launching, or add the folder to your user PATH.
 
 ```powershell
-Test-Path "$env:ProgramFiles\OpenSSH\ssh.exe"
-Test-Path "$env:ProgramFiles\OpenSSH\scp.exe"
-& "$env:ProgramFiles\OpenSSH\ssh.exe" -V
+Test-Path 'F:\Tools\OpenSSH-Win64\ssh.exe'
+Test-Path 'F:\Tools\OpenSSH-Win64\scp.exe'
+& 'F:\Tools\OpenSSH-Win64\ssh.exe' -V
 ```
+
+The **client-only MSI** is an alternative but normally installs under
+`C:\Program Files\OpenSSH`, regardless of where the MSI file was downloaded.
+That may not suit a machine with little free C: space. Do not install the
+Server component: the bot only needs outbound SSH and SCP.
 
 Close and reopen the terminal and the bot, then check again. On newer Windows
 builds, if OpenSSH is installed but absent from PATH, the bot also looks under
