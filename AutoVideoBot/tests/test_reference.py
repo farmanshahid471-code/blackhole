@@ -13,8 +13,8 @@ from PIL import Image
 from bot.config import Config
 from bot.paths import Project
 from bot.pipeline import Pipeline
-from bot.reference import (canonical_url, captions_from_vtt, reference_context,
-                           study_reference)
+from bot.reference import (MAX_BYTES, REFERENCE_FORMAT, canonical_url,
+                           captions_from_vtt, reference_context, study_reference)
 from bot.script import generate_script
 
 VIDEO_ID = 'dQw4w9WgXcQ'
@@ -61,6 +61,33 @@ class ReferenceTests(unittest.TestCase):
         self.assertIn('Beat 199', excerpt)
         self.assertLessEqual(len(excerpt), 500)
 
+    def test_selector_handles_youtube_video_only_formats_without_audio(self):
+        # YouTube can offer video-only WebM + a separate audio-only format,
+        # with no pre-muxed MP4. The former selector found nothing in this case.
+        import yt_dlp
+        available = [
+            {'format_id': '251', 'ext': 'webm', 'vcodec': 'none',
+             'acodec': 'opus', 'tbr': 50},
+            {'format_id': '247', 'ext': 'webm', 'height': 480, 'width': 854,
+             'vcodec': 'vp9', 'acodec': 'none', 'tbr': 350},
+            {'format_id': '248', 'ext': 'webm', 'height': 1080, 'width': 1920,
+             'vcodec': 'vp9', 'acodec': 'none', 'tbr': 1100},
+        ]
+        with yt_dlp.YoutubeDL({'quiet': True}) as dl:
+            selected = list(dl.build_format_selector(REFERENCE_FORMAT)(
+                {'formats': available, 'incomplete_formats': False}))
+            old = list(dl.build_format_selector(
+                'best[height<=480][ext=mp4]/best[height<=480]/worst')(
+                {'formats': available, 'incomplete_formats': False}))
+        self.assertEqual(old, [])
+        self.assertEqual([f['format_id'] for f in selected], ['247'])
+        # No <=720 stream? Choose the smallest available video, not audio.
+        only_high = [available[0], available[2]]
+        with yt_dlp.YoutubeDL({'quiet': True}) as dl:
+            selected = list(dl.build_format_selector(REFERENCE_FORMAT)(
+                {'formats': only_high, 'incomplete_formats': False}))
+        self.assertEqual([f['format_id'] for f in selected], ['248'])
+
     def test_study_downloads_bounded_media_and_caches_text_only(self):
         class FakeDownloader:
             calls = 0
@@ -71,10 +98,16 @@ class ReferenceTests(unittest.TestCase):
                 return {'id': VIDEO_ID, 'title': 'How gravity works', 'duration': 42}
             def download(self, urls):
                 FakeDownloader.calls += 1
+                self.testcase.assertEqual(self.options['format'], REFERENCE_FORMAT)
+                self.testcase.assertEqual(self.options['max_filesize'], MAX_BYTES)
+                with self.testcase.assertRaisesRegex(RuntimeError, '150 MB'):
+                    self.options['progress_hooks'][0]({'downloaded_bytes': MAX_BYTES + 1})
                 scratch = Path(self.options['outtmpl']).parent
-                (scratch / 'source.mp4').write_bytes(b'fake video')
+                (scratch / 'source.webm').write_bytes(b'fake silent WebM video')
                 (scratch / 'source.en.vtt').write_text(
                     'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nA star bends light\n')
+                return 0
+        FakeDownloader.testcase = self
         def fake_ffmpeg(args, **kwargs):
             Image.new('RGB', (320, 180), (20, 30, 80)).save(args[-1])
             return Mock(returncode=0, stderr='')
@@ -95,6 +128,28 @@ class ReferenceTests(unittest.TestCase):
             self.assertIn('star bends light', reference_context(report))
             self.assertFalse((project.tmp_dir / 'reference').exists())
             self.assertTrue((project.dir / 'reference.json').exists())
+
+    def test_failed_download_and_overlong_reference_leave_no_report_or_media(self):
+        class FakeDownloader:
+            duration = 30
+            def __init__(self, options): self.options = options
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def extract_info(self, url, download=False):
+                return {'id': VIDEO_ID, 'duration': self.duration}
+            def download(self, urls):
+                return 1  # yt-dlp may report an error via return code
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Project(Path(tmp), 'video').create()
+            with patch.dict(sys.modules, {'yt_dlp': types.SimpleNamespace(YoutubeDL=FakeDownloader)}):
+                with self.assertRaisesRegex(RuntimeError, 'could not download'):
+                    study_reference(URL, project, Config({}))
+                self.assertFalse((project.tmp_dir / 'reference').exists())
+                self.assertFalse((project.dir / 'reference.json').exists())
+                FakeDownloader.duration = 901
+                with self.assertRaisesRegex(RuntimeError, 'over 15 minutes'):
+                    study_reference(URL, project, Config({}))
+                self.assertFalse((project.tmp_dir / 'reference').exists())
 
     def test_web_rejects_bad_reference_before_starting_a_job(self):
         try:
@@ -122,6 +177,7 @@ class ReferenceTests(unittest.TestCase):
                     return {'id': VIDEO_ID, 'title': 'silent', 'duration': 20}
                 def download(self, urls):
                     (Path(self.options['outtmpl']).parent / 'source.mp4').write_bytes(b'video')
+                    return 0
             def fake_ffmpeg(args, **kwargs):
                 Image.new('RGB', (320, 180)).save(args[-1])
                 return Mock(returncode=0, stderr='')

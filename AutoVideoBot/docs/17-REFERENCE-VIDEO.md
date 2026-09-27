@@ -16,7 +16,10 @@ available when you provide your own script; your script always wins.
 ## What it really analyzes
 
 - `yt-dlp` downloads **one** public video, up to 15 minutes and 150 MB, at a
-  reduced resolution; FFmpeg samples eight ordered stills. It also requests
+  reduced resolution when available (video-only WebM is supported; reference
+  audio is not needed or downloaded). FFmpeg samples eight ordered stills.
+  A higher-resolution video stream is tried only if no reduced-resolution
+  stream is available; the same 150 MB limit still applies. It also requests
   available English, Urdu or Hindi captions (including automatic captions).
   Downloading can fail when YouTube restricts the video, requires sign-in, or
   changes its delivery. Use material you have the right to analyze.

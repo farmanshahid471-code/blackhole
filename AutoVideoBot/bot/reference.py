@@ -21,6 +21,10 @@ from .utils import info, resolve_ffmpeg
 
 MAX_DURATION = 900  # seconds; avoid unexpectedly huge downloads
 MAX_BYTES = 150 * 1024 * 1024
+# The study only needs picture frames; YouTube may expose only separate silent
+# video + audio streams, so never require a pre-muxed MP4 or audio download.
+# Try <=480p, then <=720p; as a last resort take the smallest video format.
+REFERENCE_FORMAT = "bv*[height<=480]/bv*[height<=720]/wv*"
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 TIMESTAMP = re.compile(r"^(?:\d+:)?\d{2}:\d{2}\.\d{3}\s+-->")
 
@@ -219,13 +223,14 @@ def study_reference(link: str, project, cfg) -> dict:
                 raise RuntimeError("Reference exceeds 150 MB download limit.")
         opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
                 "outtmpl": str(scratch / "source.%(ext)s"),
-                "format": "best[height<=480][ext=mp4]/best[height<=480]/worst",
+                "format": REFERENCE_FORMAT,
                 "max_filesize": MAX_BYTES, "progress_hooks": [cap_progress],
                 "socket_timeout": 20, "retries": 2, "fragment_retries": 2,
                 "writesubtitles": True, "writeautomaticsub": True,
                 "subtitleslangs": ["en.*", "ur.*", "hi.*"], "subtitlesformat": "vtt"}
         with yt_dlp.YoutubeDL(opts) as dl:
-            dl.download([url])
+            if dl.download([url]) != 0:
+                raise RuntimeError("yt-dlp could not download the reference video stream.")
         videos = [p for p in scratch.glob("source.*") if p.suffix.lower() in (".mp4", ".mkv", ".webm")]
         if not videos or videos[0].stat().st_size > MAX_BYTES:
             raise RuntimeError("Could not download a small reference video; it may be restricted or too large.")
@@ -248,7 +253,12 @@ def study_reference(link: str, project, cfg) -> dict:
              "captions + frame statistics only (configure a vision model for visual meaning)"))
         return report
     except Exception as exc:
-        raise RuntimeError(f"Could not study YouTube reference: {exc}") from exc
+        detail = str(exc)
+        if "Requested format is not available" in detail:
+            detail += (". Try updating yt-dlp in this bot's .venv or using "
+                       "another public video with available video streams. "
+                       "No script was generated from this reference.")
+        raise RuntimeError(f"Could not study YouTube reference: {detail}") from exc
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
