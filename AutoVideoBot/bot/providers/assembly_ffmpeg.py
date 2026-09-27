@@ -112,7 +112,7 @@ class FFmpegAssembly(AssemblyProvider):
         except Exception as e:
             return False, (
                 f"ffmpeg could not be started ({e}).\n"
-                "  Windows: run  scripts/install_windows.bat  (it installs ffmpeg for you)\n"
+                "  Windows: run  INSTALL-WINDOWS.bat  (it installs ffmpeg for you)\n"
                 "  macOS  : brew install ffmpeg\n"
                 "  Linux  : sudo apt install ffmpeg\n"
                 "  Or: pip install imageio-ffmpeg  (downloads a private copy)"

@@ -78,7 +78,7 @@ class EdgeTTSProvider(TTSProvider):
             die(
                 "edge-tts is not installed.\n"
                 "  Run:   pip install edge-tts\n"
-                "  (or run the installer:  scripts/install_windows.bat)"
+                "  (or run the installer:  INSTALL-WINDOWS.bat)"
             )
 
     # ------------------------------------------------------------------

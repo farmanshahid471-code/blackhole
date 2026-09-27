@@ -30,7 +30,8 @@ from bot.paths import ROOT, Project, default_projects_dir  # noqa: E402
 from bot.pipeline import Pipeline                        # noqa: E402
 from bot.registry import list_providers                  # noqa: E402
 from bot.utils import (                                  # noqa: E402
-    die, ensure_dir, fail, fmt_time, human_bytes, info, log, ok, step, warn, write_json,
+    die, ensure_dir, fail, fmt_time, human_bytes, info, log, ok, resolve_ffmpeg,
+    step, warn, write_json,
 )
 
 BANNER = r"""
@@ -63,8 +64,12 @@ def cmd_doctor(args) -> int:
 
     # ---- ffmpeg ----
     ff = str(cfg.get("system.ffmpeg_bin", "ffmpeg"))
-    ffpath = shutil.which(ff) or (ff if Path(ff).exists() else None)
-    if not ffpath:
+    # Use the SAME discovery the providers use: config path -> PATH -> the
+    # private copy from imageio-ffmpeg. Checking only PATH here used to print
+    # a false "NOT FOUND" (and a failing verdict) for installs - like the
+    # Windows installer - that deliberately rely on the bundled binary.
+    ffpath = resolve_ffmpeg(ff, "ffmpeg")
+    if not (shutil.which(ffpath) or Path(ffpath).exists()):
         fail(f"ffmpeg NOT FOUND ('{ff}')")
         log("    [bold]Windows[/]: download https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
         log("            unzip it to C:\\ffmpeg, then add C:\\ffmpeg\\bin to your PATH")
@@ -74,6 +79,8 @@ def cmd_doctor(args) -> int:
         log("    [bold]Linux[/]  : sudo apt update && sudo apt install ffmpeg")
         problems += 1
     else:
+        if "site-packages" in ffpath or "imageio_ffmpeg" in ffpath:
+            info(f"    (using the private copy that came with imageio-ffmpeg: {ffpath})")
         from bot.providers.assembly_ffmpeg import FFmpegAssembly
         asm = FFmpegAssembly(cfg, None)
         good, msg = asm.healthcheck()
@@ -458,8 +465,7 @@ def cmd_config(args) -> int:
 def cmd_test(args) -> int:
     """Render a tiny 8-second sample so you can verify the whole toolchain."""
     step("SELF TEST")
-    base_cfg = load_config()
-    overrides = list(args.set or []) + [
+    overrides = [
         "video.preset=ultrafast",
         "video.crf=26",
         "transitions.enabled=true",
@@ -467,9 +473,14 @@ def cmd_test(args) -> int:
         "audio.music.enabled=false",
         "extras.metadata.enabled=false",
         "extras.thumbnail.enabled=true",
-        f"image.provider={args.image or base_cfg.get('image.provider', 'pollinations')}",
-        f"tts.provider={args.tts or base_cfg.get('tts.provider', 'edge')}",
     ]
+    if args.image:
+        overrides.append(f"image.provider={args.image}")
+    if args.tts:
+        overrides.append(f"tts.provider={args.tts}")
+    # --set goes LAST so it always wins. (These used to be appended after the
+    # user's --set list and silently overwrote it.)
+    overrides += list(args.set or [])
     cfg = load_config(cli_overrides=overrides)
     name = args.project or "selftest"
     proj = Project.from_name(ROOT / str(cfg.get("system.projects_dir")), name)
@@ -534,7 +545,7 @@ def cmd_web(args) -> int:
         warn(f"the web UI could not start: {e}")
         log("\n[bold]Fix:[/] the web interface needs two extra packages:")
         log("   pip install fastapi \"uvicorn[standard]\" python-multipart")
-        log("   (or just run the installer again:  scripts/install_windows.bat)")
+        log("   (or just run the installer again:  INSTALL-WINDOWS.bat)")
         return 1
     serve(host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
