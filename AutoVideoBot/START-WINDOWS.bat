@@ -75,18 +75,14 @@ if not exist "workspace" mkdir "workspace"
 if not exist "workspace\projects" mkdir "workspace\projects"
 if not exist ".env" if exist ".env.example" copy /y ".env.example" ".env" >nul
 
-REM --- 4. free the port if an old copy is still running -----------------------
-netstat -ano 2>nul | findstr /r ":%PORT% .*LISTENING" >nul 2>&1
-if !errorlevel!==0 (
-  echo    Closing an earlier copy of the interface that is still running ...
-  for /f "tokens=5" %%P in ('netstat -ano ^| findstr /r ":%PORT% .*LISTENING"') do (
-    taskkill /pid %%P /f >nul 2>&1
-  )
-  timeout /t 1 /nobreak >nul
-)
+REM --- 4. ports -------------------------------------------------------------
+REM  NOTE: nothing here ever kills processes to free the port. Force-killing
+REM  whatever held the port once took down unrelated Windows programs (and
+REM  blanked the screen). If an older copy is still running, the bot simply
+REM  picks the next free port by itself and prints the address.
 
 REM --- 5. go -----------------------------------------------------------------
-echo    Starting the bot on http://127.0.0.1:%PORT%
+echo    Starting the bot ...
 echo.
 echo    Your browser will open by itself in a few seconds.
 echo.

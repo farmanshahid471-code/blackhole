@@ -70,7 +70,7 @@ set "TEMP=%CACHE_DIR%\tmp"
 
 if /i "%~d0"=="C:" (
   echo.
-  echo  NOTE: this folder is currently on the C: drive ^(%~dp0^).
+  echo  NOTE: this folder is currently on the C: drive: !CD!
   echo        Everything is installed INSIDE this folder and nothing is
   echo        written elsewhere - so if you want the bot on F:, close this
   echo        window, move the whole folder to F:\ and run this again from

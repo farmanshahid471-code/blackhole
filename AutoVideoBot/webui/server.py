@@ -1278,9 +1278,37 @@ if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 
+def _find_free_port(host: str, port: int, tries: int = 20) -> int | None:
+    """Return the first free port at or above `port` (None if all are busy)."""
+    import socket
+    for candidate in range(port, port + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, candidate))
+            except OSError:
+                continue
+            return candidate
+    return None
+
+
 def main(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
     """Start the server (used by `python main.py web`)."""
     import uvicorn
+
+    # NEVER free a port by force-killing whatever holds it - that once took
+    # down unrelated programs (and the desktop with them). If the port is
+    # busy - even by an older copy of this UI - walk up to the next free one.
+    chosen = _find_free_port(host, port)
+    if chosen is None:
+        print(f"  ERROR: none of the ports {port}-{port + 19} are free.")
+        print("         Close whatever is using them (an old AutoVideoBot window?")
+        print("         Task Manager -> End task) and start again.")
+        return
+    if chosen != port:
+        print(f"  NOTE: port {port} is busy - maybe an older copy of the interface")
+        print(f"        is still running. Using port {chosen} instead.")
+        print("        Nothing was closed or killed.")
+    port = chosen
 
     if open_browser:
         import threading as _t
@@ -1302,7 +1330,12 @@ def main(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -
     print("   (keep this window open while you work - closing it stops the UI)")
     print("  " + "=" * 66)
     print()
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+    except OSError as e:
+        print(f"  ERROR: the server could not start ({e}).")
+        print("         If a firewall dialog appeared, allow it - or pick another")
+        print("         port with:  python main.py web --port 8800")
 
 
 if __name__ == "__main__":
