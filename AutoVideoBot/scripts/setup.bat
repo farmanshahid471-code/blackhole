@@ -19,6 +19,14 @@ echo ==============================================
 echo   AutoVideoBot setup   (%CD%)
 echo ==============================================
 
+REM --- every download stays inside THIS folder (nothing on C:) ---
+set "CACHE_DIR=%CD%\.cache"
+if not exist "%CACHE_DIR%\tmp" mkdir "%CACHE_DIR%\tmp"
+if not exist "%CACHE_DIR%\pip" mkdir "%CACHE_DIR%\pip"
+set "PIP_CACHE_DIR=%CACHE_DIR%\pip"
+set "TMP=%CACHE_DIR%\tmp"
+set "TEMP=%CACHE_DIR%\tmp"
+
 REM ---------------------------------------------------------------- 1. python
 where python >nul 2>nul
 if errorlevel 1 (
@@ -37,11 +45,11 @@ if errorlevel 1 (
     echo.
     echo   ffmpeg NOT found. This is the most common Windows problem. Fix it:
     echo     1. download https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
-    echo     2. unzip it to   C:\ffmpeg
+    echo     2. unzip it to   F:\ffmpeg
     echo     3. press Windows key, type "environment variables", open
     echo        "Edit the system environment variables"
     echo     4. Environment Variables... -^> under "System variables" find Path -^> Edit
-    echo     5. New -^>  C:\ffmpeg\bin  -^> OK, OK
+    echo     5. New -^>  F:\ffmpeg\bin  -^> OK, OK
     echo     6. CLOSE this window and run setup.bat again
     echo.
     echo   Continuing anyway so the rest of the setup finishes...

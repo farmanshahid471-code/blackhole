@@ -212,7 +212,7 @@ class PiperProvider(TTSProvider):
             die(
                 "Piper is not installed.\n"
                 "  1. download it:  https://github.com/rhasspy/piper/releases\n"
-                "  2. unzip it somewhere permanent (e.g. C:\\piper)\n"
+                "  2. unzip it somewhere permanent (e.g. F:\\piper)\n"
                 "  3. put the .exe (or the linux binary) on your PATH, or set its full\n"
                 "     path in config.yaml -> tts.piper.binary\n"
                 "  4. download a voice (.onnx + .onnx.json) into assets/piper/\n"

@@ -22,6 +22,14 @@ set "VENV=.venv"
 set "VPY=%VENV%\Scripts\python.exe"
 set "PORT=8765"
 
+REM --- every download stays inside THIS folder (nothing on C:) ---
+set "CACHE_DIR=%~dp0.cache"
+if not exist "%CACHE_DIR%\tmp" mkdir "%CACHE_DIR%\tmp"
+if not exist "%CACHE_DIR%\pip" mkdir "%CACHE_DIR%\pip"
+set "PIP_CACHE_DIR=%CACHE_DIR%\pip"
+set "TMP=%CACHE_DIR%\tmp"
+set "TEMP=%CACHE_DIR%\tmp"
+
 echo.
 echo  ==========================================================================
 echo    AutoVideoBot  -  web interface

@@ -7,6 +7,15 @@
 | **Windows 10/11** | **Double-click `INSTALL-WINDOWS.bat`** in the project folder, then `START-WINDOWS.bat` whenever you want to use the bot. |
 | macOS / Linux / WSL | `bash START-WEB.sh` (it installs anything missing and opens the browser), or `./scripts/setup.sh` for the command-line-only setup |
 
+> **Nothing is installed on C:.** Put the project folder on `F:` (or wherever
+> you like) and everything - the private Python environment, every downloaded
+> package, the bundled FFmpeg, the download cache and your finished videos -
+> is created **inside this folder** and nowhere else. The installers even
+> redirect pip's cache and the Windows temp folder into `.cache\` inside the
+> project. The only exception is Python itself if the computer has none yet:
+> during its installer press **"Customize installation"** and set the folder
+> to `F:\Python` (and tick *"Add python.exe to PATH"*).
+
 ### What `INSTALL-WINDOWS.bat` does for you
 
 It is a normal, readable batch file - open it in Notepad if you want to see
@@ -70,10 +79,10 @@ FFmpeg is a program, not a python package - pip cannot install it.
 
 * **Windows**
   1. download https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
-  2. unzip to `C:\ffmpeg`
+  2. unzip to `F:\ffmpeg`
   3. Windows key -> type "environment variables" -> *Edit the system
      environment variables* -> *Environment Variables...* -> under *System
-     variables* select `Path` -> *Edit* -> *New* -> `C:\ffmpeg\bin` -> OK/OK
+     variables* select `Path` -> *Edit* -> *New* -> `F:\ffmpeg\bin` -> OK/OK
   4. **close and reopen the terminal** (PATH is read at startup)
   5. test: `ffmpeg -version`
 * **macOS**: `brew install ffmpeg`
@@ -83,7 +92,7 @@ FFmpeg is a program, not a python package - pip cannot install it.
 
 > No permission to install software? Download the static build from
 > https://johnvansickle.com/ffmpeg/ and point config.yaml at it:
-> `system.ffmpeg_bin: "C:/ffmpeg-7.0.2/ffmpeg.exe"`.
+> `system.ffmpeg_bin: "F:/ffmpeg-7.0.2/ffmpeg.exe"`.
 
 ### 3. Python packages
 

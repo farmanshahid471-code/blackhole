@@ -474,7 +474,7 @@ extras:
 # 11. ENGINE / SYSTEM
 # ============================================================================
 system:
-  ffmpeg_bin: "ffmpeg"       # or a full path: "C:/ffmpeg/bin/ffmpeg.exe"
+  ffmpeg_bin: "ffmpeg"       # or a full path: "F:/ffmpeg/bin/ffmpeg.exe"
   ffprobe_bin: "ffprobe"
   threads: 0                 # 0 = let ffmpeg decide (usually all cores)
 

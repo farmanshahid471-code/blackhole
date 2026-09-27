@@ -72,7 +72,7 @@ def cmd_doctor(args) -> int:
     if not (shutil.which(ffpath) or Path(ffpath).exists()):
         fail(f"ffmpeg NOT FOUND ('{ff}')")
         log("    [bold]Windows[/]: download https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
-        log("            unzip it to C:\\ffmpeg, then add C:\\ffmpeg\\bin to your PATH")
+        log("            unzip it to F:\\ffmpeg, then add F:\\ffmpeg\\bin to your PATH")
         log("            (Settings -> System -> About -> Advanced -> Environment Variables)")
         log("            then CLOSE and REOPEN the terminal")
         log("    [bold]macOS[/]  : brew install ffmpeg")

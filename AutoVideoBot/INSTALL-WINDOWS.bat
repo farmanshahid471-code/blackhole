@@ -54,6 +54,31 @@ set "PYEXE="
 set "VENV=.venv"
 
 REM ===========================================================================
+REM  KEEP EVERY DOWNLOAD INSIDE THIS FOLDER (NOTHING ON C:)
+REM ===========================================================================
+REM  pip normally caches every package it downloads in
+REM  C:\Users\<you>\AppData\Local\pip\cache and Windows temp files go to
+REM  C:\Users\<you>\AppData\Local\Temp. Both are redirected into .cache\
+REM  inside THIS folder instead. Put this folder on F: and every byte the
+REM  installer and the bot downloads stays on F:.
+set "CACHE_DIR=%~dp0.cache"
+if not exist "%CACHE_DIR%\tmp" mkdir "%CACHE_DIR%\tmp"
+if not exist "%CACHE_DIR%\pip" mkdir "%CACHE_DIR%\pip"
+set "PIP_CACHE_DIR=%CACHE_DIR%\pip"
+set "TMP=%CACHE_DIR%\tmp"
+set "TEMP=%CACHE_DIR%\tmp"
+
+if /i "%~d0"=="C:" (
+  echo.
+  echo  NOTE: this folder is currently on the C: drive ^(%~dp0^).
+  echo        Everything is installed INSIDE this folder and nothing is
+  echo        written elsewhere - so if you want the bot on F:, close this
+  echo        window, move the whole folder to F:\ and run this again from
+  echo        there.
+  echo.
+)
+
+REM ===========================================================================
 REM  1. FIND PYTHON
 REM ===========================================================================
 echo  [1/7] Looking for Python ...
@@ -102,6 +127,8 @@ if not defined PYEXE (
   echo        IMPORTANT when installing Python:
   echo           * tick the box  "Add python.exe to PATH"   ^(it is at the
   echo             bottom of the first screen - easy to miss^)
+  echo           * if you do not want Python on C:, press "Customize
+  echo             installation" and set the install location to F:\Python
   echo           * then close the Python installer window and come back here
   echo.
   echo         1 = open the download page now
@@ -116,8 +143,9 @@ if not defined PYEXE (
     start "" "https://www.python.org/downloads/windows/"
     echo.
     echo        Download the newest "Windows installer (64-bit)", run it,
-    echo        tick "Add python.exe to PATH", install, then come back
-    echo        to this window and press any key.
+    echo        tick "Add python.exe to PATH" ^(and "Customize installation" -
+    echo        set the folder to F:\Python if you do not want it on C:^),
+    echo        install, then come back to this window and press any key.
     echo.
     pause
     echo        Looking for Python again ...
@@ -283,8 +311,8 @@ if defined HAVEFF (
   echo.
   echo        FFmpeg was not found and could not be downloaded automatically.
   echo        The bot will tell you more when you run the health check.
-  echo        Manual fix: https://www.gyan.dev/ffmpeg/builds/  ^(essentials^)
-  echo        Unzip it to C:\ffmpeg and add C:\ffmpeg\bin to your PATH.
+    echo        Manual fix: https://www.gyan.dev/ffmpeg/builds/  ^(essentials^)
+    echo        Unzip it to F:\ffmpeg and add F:\ffmpeg\bin to your PATH.
   echo.
 )
 

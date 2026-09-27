@@ -11,12 +11,25 @@ things around, you change it here and nowhere else.
 """
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 from .utils import ensure_dir, slugify
 
 # The folder that contains main.py, config.yaml, bot/ ...
 ROOT = Path(__file__).resolve().parent.parent
+
+# NOTHING is ever downloaded or written to C:. Every temporary file the
+# runtime makes (pydub conversions, downloads in progress, ffmpeg scratch
+# files) goes to workspace/tmp inside this folder instead of the Windows
+# %TEMP% folder on C:. Put this project folder on F: and everything lives
+# on F:.
+_TMP_DIR = ensure_dir(ROOT / "workspace" / "tmp")
+tempfile.tempdir = str(_TMP_DIR)
+os.environ["TMPDIR"] = str(_TMP_DIR)
+os.environ["TMP"] = str(_TMP_DIR)
+os.environ["TEMP"] = str(_TMP_DIR)
 
 
 class Project:
