@@ -157,3 +157,17 @@ once) and **$0.02-0.04 for every video after that** on the same kept machine.
 Compare with Replicate at ~$0.003 per image, i.e. ~$0.09 per 30-image video
 with zero operations: if you only make occasional videos, Replicate is
 simpler; if you make a batch, renting wins.
+
+## API returns `403` with `code: challenge`
+
+This is a Vast.ai edge/security challenge, **not proof that your API key is
+wrong**. The bot now tries Vast's documented `console.vast.ai` API host first;
+for read-only checks only, it may try the other Vast first-party host once.
+It does not replay create/delete operations or try to solve CAPTCHAs. If both
+hosts challenge you, sign in to Vast.ai in your own browser and complete any
+account verification, then retry from the **same machine/network**. If the
+challenge persists, contact Vast support with its challenge ID. Never send
+support, this bot, or anyone in chat your raw API key. The official Vast CLI
+(`vastai show user`) can independently confirm whether that machine/network
+can reach the API. See https://docs.vast.ai/api-reference/authentication for
+the documented API host and authentication format.

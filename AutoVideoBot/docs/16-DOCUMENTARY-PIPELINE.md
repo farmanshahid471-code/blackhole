@@ -44,7 +44,9 @@ and scene JSON over SSH. It **does not** boot an image-model server or upload
 multiple scenes in a bounded parallel queue; successfully downloaded clips
 are cached even if another scene fails. Final audio, captions, and mux happen
 locally. Provide a valid `VAST_API_KEY` in `.env` and an SSH key registered
-with Vast.ai before using this option.
+with Vast.ai before using this option. If `/users/current/` returns
+`403` with `code: challenge`, see `docs/06-VAST-AI-GPU.md`: this is not a
+signal to rotate your key or to use CAPTCHA-bypass tools.
 
 To reuse **your own running** Vast instance (the bot does not destroy it):
 

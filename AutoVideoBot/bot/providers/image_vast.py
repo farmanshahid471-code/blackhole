@@ -56,14 +56,18 @@ from ..utils import debug, die, info, run_cmd, which, warn
 from . import _wire
 from .base import ImageProvider
 
-# Vast has moved hosts over time (console.vast.ai -> cloud.vast.ai). Try the
-# current one first, fall back to the old one. NEVER follow cross-host
-# redirects with requests: it silently drops the Authorization header and the
-# API then answers 401 even when the key is perfect.
+# Vast's published API examples use console.vast.ai. Try it FIRST: the
+# interactive cloud.vast.ai frontend can return a browser challenge to API
+# clients. Do not follow cross-host redirects with Authorization attached.
 API_BASES = (
-    "https://cloud.vast.ai/api/v0",
     "https://console.vast.ai/api/v0",
+    "https://cloud.vast.ai/api/v0",
 )
+
+
+class VastChallengeError(RuntimeError):
+    """A Vast edge challenge is not evidence that the API key is invalid."""
+
 
 
 def _fmt_metric(offer: dict[str, Any], *keys: str) -> str:
@@ -227,6 +231,7 @@ class VastProvider(ImageProvider):
         short = path.split("?")[0]
         bases = (self._api_base,) if self._api_base else API_BASES
         last: RuntimeError | None = None
+        challenge_error: VastChallengeError | None = None
         for base in bases:
             url = f"{base}{path}"
             debug(f"vast: {method} {url}")
@@ -248,6 +253,30 @@ class VastProvider(ImageProvider):
                     f"redirect at {base} - trying the other API host")
                 continue
             if r.status_code >= 400:
+                # A 403 with code=challenge comes from Vast's edge protection,
+                # NOT from its API-key verifier. Never suggest rotating a key
+                # or programmatically completing a browser challenge for it.
+                if r.status_code == 403:
+                    try:
+                        error = r.json().get("error", {})
+                    except (ValueError, AttributeError):
+                        error = {}
+                    if isinstance(error, dict) and error.get("code") == "challenge":
+                        challenge_id = str(error.get("id") or "")[:100]
+                        last = VastChallengeError(
+                            f"Vast.ai API challenge at {base}; this does not prove your key is wrong. "
+                            "Try Vast's documented console.vast.ai API endpoint from the same "
+                            "machine/network; if it is also challenged, complete any account "
+                            "verification in your own browser or contact Vast.ai support with "
+                            f"challenge ID {challenge_id or '(not provided)'}. "
+                            "Do not share your API key or use CAPTCHA-bypass services."
+                        )
+                        challenge_error = last
+                        # One other first-party endpoint can be tried for a
+                        # read-only request, but never replay a billed mutation.
+                        if method.upper() == "GET":
+                            continue
+                        raise last
                 body_txt = (r.text or "").strip().replace("\n", " ")[:200]
                 hint = ""
                 if r.status_code in (401, 403):
@@ -260,14 +289,17 @@ class VastProvider(ImageProvider):
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> HTTP {r.status_code}: {body_txt}{hint}")
                 if r.status_code not in (404, 410, 500, 502, 503):
-                    raise last          # auth/billing errors are the same everywhere
+                    # A challenge from the documented endpoint must not be
+                    # misreported as a bad key because the fallback disagrees.
+                    raise challenge_error or last
                 continue
             self._api_base = base       # remember the host that works
             try:
                 return r.json()
             except Exception:
                 return {"raw": r.text}
-        raise last or RuntimeError(f"Vast.ai API {method} {short} -> no API host reachable")
+        raise challenge_error or last or RuntimeError(
+            f"Vast.ai API {method} {short} -> no API host reachable")
 
     # ==================================================================
     # healthcheck
@@ -279,6 +311,8 @@ class VastProvider(ImageProvider):
             return False, "VAST_API_KEY is empty in .env"
         try:
             data = self._api("GET", "/users/current/", timeout=25)
+        except VastChallengeError as e:
+            return False, str(e)
         except Exception as e:
             return False, f"could not reach Vast.ai ({str(e)[:160]})"
         if isinstance(data, dict) and data.get("error"):
