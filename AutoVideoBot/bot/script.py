@@ -162,9 +162,24 @@ def parse_script_file(path: Path, *, default_scene_seconds: float = 6.0) -> dict
     if looks_json:
         try:
             data = extract_json(stripped)
-            return normalise_llm_json(data, source="file-json")
+            out = normalise_llm_json(data, source="file-json")
+            _fill_timestamps(out["scenes"], default_scene_seconds)
+            for i, sc in enumerate(out["scenes"]):
+                sc["id"] = f"s{i+1:02d}"
+                sc["index"] = i
+                sc["word_count"] = len(sc["narration"].split())
+            out["total_duration"] = out["scenes"][-1]["target_end"]
+            source_meta = data if isinstance(data, dict) else {}
+            out["meta"] = {k: source_meta[k] for k in ("voice", "music") if k in source_meta}
+            # Untimed JSON scripts can let the recorded voice drive the clock.
+            raw_scenes = source_meta.get("scenes", []) if isinstance(data, dict) else data
+            out["narration_led"] = not any(
+                sc.get(key) is not None
+                for sc in raw_scenes if isinstance(sc, dict)
+                for key in ("start", "end", "start_time", "end_time"))
+            return out
         except Exception as e:
-            warn(f"file looks like JSON but did not parse ({e}); reading it as plain text")
+            raise ValueError(f"Invalid JSON script {path.name}: {e}") from e
 
     meta: dict[str, Any] = {}
     scenes: list[dict] = []
@@ -408,8 +423,9 @@ def generate_script(llm, cfg, *, topic: str, duration: float | None = None,
     prompts/script_user.txt so you can rewrite the bot's personality
     without touching any Python.
     """
-    system = load_prompt_file(cfg.get("llm.prompt_files.system", "prompts/script_system.txt"))
-    user_tpl = load_prompt_file(cfg.get("llm.prompt_files.user", "prompts/script_user.txt"))
+    documentary = cfg.get("visual.engine", "images") == "remotion"
+    system = load_prompt_file("prompts/director_system.txt" if documentary else cfg.get("llm.prompt_files.system", "prompts/script_system.txt"))
+    user_tpl = load_prompt_file("prompts/director_user.txt" if documentary else cfg.get("llm.prompt_files.user", "prompts/script_user.txt"))
 
     scenes_cfg = cfg.section("llm.scenes")
     per_scene = float(scenes_cfg.get("target_seconds_per_scene", 9))
@@ -435,8 +451,26 @@ def generate_script(llm, cfg, *, topic: str, duration: float | None = None,
         temperature=float(scenes_cfg.get("temperature", cfg.get("llm.deepseek.temperature", 0.8))),
         json_mode=True,
     )
-    data = extract_json(raw)
-    out = normalise_llm_json(data, source="llm")
+    def parse_and_check(answer: str) -> dict:
+        out = normalise_llm_json(extract_json(answer), source="llm")
+        if documentary:
+            from .shot_library import validate_sequence
+            validate_sequence(out["scenes"])
+            out["narration_led"] = True
+        return out
+
+    try:
+        out = parse_and_check(raw)
+    except (ValueError, TypeError) as error:
+        if not documentary:
+            raise
+        warn(f"director returned invalid shot JSON ({error}); requesting one repair")
+        repaired = llm.chat([
+            {"role": "system", "content": system}, {"role": "user", "content": user},
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": f"Fix this validation error: {error}. Return the complete corrected JSON only; use only the allowed shots and parameter bounds."},
+        ], temperature=0.2, json_mode=True)
+        out = parse_and_check(repaired)
     out["topic"] = topic
     out["requested_duration"] = duration
 
@@ -492,13 +526,17 @@ def normalise_llm_json(data: Any, source: str = "llm") -> dict:
             "target_end": parse_timestamp(sc.get("end") if sc.get("end") is not None else sc.get("end_time")),
             "title": str(sc.get("title") or sc.get("chapter") or "").strip(),
             "motion": str(sc.get("motion") or "").strip() or None,
-            "duration_hint": parse_timestamp(sc.get("duration")),
+            "duration_hint": parse_timestamp(sc.get("duration_hint_s", sc.get("duration"))),
+            "shot": sc.get("shot"),
+            "params": sc.get("params") or {},
+            "text_overlays": sc.get("text_overlays") or [],
+            "sfx": sc.get("sfx"),
         }
         if entry["target_start"] is None and entry["duration_hint"] is not None:
-            prev_end = out_scenes[-1]["target_end"] if out_scenes else 0.0
+            prev_end = (out_scenes[-1].get("target_end") or 0.0) if out_scenes else 0.0
             entry["target_start"] = prev_end
             entry["target_end"] = prev_end + entry["duration_hint"]
-        if not entry["narration"] and not entry["image_prompt"]:
+        if not entry["narration"] and not entry["image_prompt"] and entry.get("shot") not in ("title_card", "outro"):
             continue
         out_scenes.append(entry)
 
@@ -512,6 +550,7 @@ def normalise_llm_json(data: Any, source: str = "llm") -> dict:
         "language": str(data.get("language") or "English"),
         "hook": str(data.get("hook") or "").strip(),
         "source": source,
+        "meta": {k: data[k] for k in ("voice", "music") if k in data},
         "scenes": out_scenes,
         "raw_meta": {k: v for k, v in data.items() if k not in ("scenes", "shots", "segments")},
     }
@@ -565,6 +604,6 @@ def validate(scenes: list[dict], cfg) -> list[str]:
                 problems.append(f"scene {i}: {wpm:.0f} words/min is too fast to speak clearly")
             elif wpm < 60 and wc > 4:
                 problems.append(f"scene {i}: only {wpm:.0f} words/min - the voice will be stretched a lot")
-        if not (sc.get("image_prompt") or "").strip():
+        if cfg.get("visual.engine", "images") != "remotion" and not (sc.get("image_prompt") or "").strip():
             problems.append(f"scene {i} has no image prompt")
     return problems

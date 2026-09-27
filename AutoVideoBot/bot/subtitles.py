@@ -13,8 +13,8 @@ Two caption flavours, both driven by REAL timing data (never guessed):
                     into even chunks and spread them across the scene duration.
                     Slightly less exact, still perfectly usable.
 
-Output: a .srt file (upload it to YouTube as a separate caption track, or
-burn it into the picture with subtitles.burn_in: true).
+Output: .srt for upload and .ass for burn-in. Documentary mode uses
+ASS word-onset karaoke from the same absolute word timings as the scene graph.
 """
 from __future__ import annotations
 
@@ -187,16 +187,23 @@ def build_srt(scenes: list[dict], cfg, *, source: str = "word_boundaries",
         tempo = float(sc.get("tempo") or 1.0)
 
         words = None
-        if source == "word_boundaries" and words_dir:
+        if source == "word_boundaries" and sc.get("word_timings"):
+            # Canonical script.json times are absolute; convert back to scene
+            # relative for the shared cue builder (which adds the offset).
+            words = [{"w": w["w"], "s": w["start"] - offset, "e": w["end"] - offset}
+                     for w in sc["word_timings"]]
+            word_offset = offset
+        elif source == "word_boundaries" and words_dir:
             wp = Path(words_dir) / f"{sid}.json"
             if wp.exists():
                 try:
                     words = json.loads(wp.read_text(encoding="utf-8")).get("words")
+                    word_offset = offset + float(sc.get("speech_pad_before") or 0)
                 except Exception as e:
                     warn(f"could not read word timings for {sid}: {e}")
 
         if words:
-            cues += build_cues_from_words(words, offset, tempo, max_words, max_chars,
+            cues += build_cues_from_words(words, word_offset, 1.0 if sc.get("word_timings") else tempo, max_words, max_chars,
                                           narration=sc.get("narration", ""))
         else:
             cues += build_cues_from_scene(sc.get("narration", ""), offset, dur,
@@ -257,7 +264,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for c in cues:
         s = _ass_time(c["start"])
         e = _ass_time(c["end"])
-        text = c["text"].replace("\n", "\\N")
+        text = re.sub(r"[{}\\]", "", c["text"]).replace("\n", "\\N")
         events.append(f"Dialogue: 0,{s},{e},Default,,0,0,0,,{text}")
     Path(path).write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return path
@@ -272,3 +279,60 @@ def _ass_time(seconds: float) -> str:
     if cs == 100:
         cs = 99
     return f"{h:d}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def words_to_karaoke_ass(scenes: list[dict], words_dir: Path, path: Path,
+                         style: dict, *, play_w: int, play_h: int,
+                         max_words: int = 4) -> Path | None:
+    """Write frame-independent ASS karaoke from actual TTS word boundaries.
+
+    Returns None when there are no word boundaries; caller should use ordinary
+    cues instead. ASS \k uses centiseconds, so each group is timed from the
+    first spoken word and each successive word changes colour on its onset.
+    """
+    groups: list[tuple[float, float, list[dict]]] = []
+    for sc in scenes:
+        wp = Path(words_dir) / f"{sc['id']}.json"
+        if not wp.exists():
+            return None
+        try:
+            words = json.loads(wp.read_text(encoding="utf-8"))["words"]
+            if not words:
+                return None
+            tempo = float(sc.get("tempo") or 1)
+            offset = float(sc.get("start") or 0) + float(sc.get("speech_pad_before") or 0)
+            limit = float(sc.get("end") or (offset + float(sc.get("duration") or 0)))
+            for i in range(0, len(words), max(1, max_words)):
+                bucket = words[i:i+max(1, max_words)]
+                start = offset + float(bucket[0]["s"]) / tempo
+                end = min(limit, offset + float(bucket[-1]["e"]) / tempo + .12)
+                if start < end:
+                    groups.append((start, max(start+.12, end), bucket))
+        except (ValueError, KeyError, TypeError, OSError) as e:
+            warn(f"invalid word boundaries in {wp.name}: {e}; using ordinary captions")
+            return None
+    if not groups:
+        return None
+    # Reuse the usual layout and play resolution, with a safe 15% lower margin.
+    layout = dict(style)
+    scale = play_h / 1080
+    layout["font_size"] = max(10, round(int(layout.get("font_size", 52)) * scale))
+    layout["outline"] = max(1, round(float(layout.get("outline", 3)) * scale))
+    layout["shadow"] = max(0, round(float(layout.get("shadow", 1)) * scale))
+    layout["margin_l"] = layout["margin_r"] = round(60 * scale)
+    layout["margin_v"] = max(round(int(layout.get("margin_v", 90)) * scale), round(play_h*.15))
+    cues_to_ass([], path, layout, play_w=play_w, play_h=play_h)
+    events = []
+    for start, end, bucket in groups:
+        pieces = []
+        for j, word in enumerate(bucket):
+            current = float(word["s"])
+            following = float(bucket[j+1]["s"]) if j+1 < len(bucket) else float(word["e"])
+            centiseconds = max(1, int(round((following-current)*100)))
+            # Escape ASS control syntax in untrusted narration/TTS output.
+            safe = re.sub(r"[{}\\]", "", str(word["w"])).replace("\n", " ").strip()
+            pieces.append(r"{\k" + str(centiseconds) + "}" + safe)
+        events.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{' '.join(pieces)}")
+    with Path(path).open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(events) + "\n")
+    return path

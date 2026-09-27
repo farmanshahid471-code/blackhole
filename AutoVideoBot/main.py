@@ -127,10 +127,28 @@ def cmd_doctor(args) -> int:
 
     # ---- providers ----
     step("CONFIGURED PROVIDERS")
-    for kind, key in (("LLM (script)", "llm.provider"),
-                      ("TTS (voice)", "tts.provider"),
-                      ("IMAGE (visuals)", "image.provider"),
-                      ("ASSEMBLY (render)", "motion.engine")):
+    configured = [("LLM (script)", "llm.provider"), ("TTS (voice)", "tts.provider")]
+    if cfg.get("visual.engine", "images") == "remotion":
+        try:
+            if cfg.get("visual.render_backend", "local") == "vast":
+                from bot.providers.render_vast import VastRemotionRenderer
+                renderer = VastRemotionRenderer(cfg, Project(ROOT / "workspace/projects", "doctor"))
+                renderer.healthcheck()
+                ok("Vast Remotion renderer: SSH and credentials configured (instance not started)")
+            else:
+                from bot.providers.render_remotion import RemotionRenderer
+                renderer = RemotionRenderer(cfg, None)
+                renderer.healthcheck()
+                browser = str(cfg.get("visual.browser_executable", "") or "")
+                if browser and not Path(browser).is_file():
+                    raise FileNotFoundError(f"Chromium binary not found: {browser}")
+                ok("Remotion shot renderer: installed (Chromium required on first render)")
+        except (RuntimeError, FileNotFoundError, ValueError) as exc:
+            fail(str(exc)); problems += 1
+    else:
+        configured.append(("IMAGE (visuals)", "image.provider"))
+    configured.append(("ASSEMBLY (render)", "motion.engine"))
+    for kind, key in configured:
         name = str(cfg.get(key, "?"))
         log(f"  [bold]{kind:20s}[/] -> [cyan]{name}[/]")
         try:

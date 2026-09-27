@@ -13,11 +13,11 @@ THE SEQUENCE (every run, in this order)
   2. voice     every scene's narration -> a wav file, plus word timings
   3. timing    measure each wav, then stretch/pad it so it lands EXACTLY on
                your timestamps. Build the continuous narration track.
-  4. images    every scene's image_prompt -> a picture (Vast/Colab/Kaggle/free)
-  5. motion    picture + Ken Burns move + scene audio -> one .mp4 per scene
-  6. transition  all clips -> one long video, crossfaded
+  4. images    legacy: image_prompt -> picture; documentary: skipped
+  5. motion    legacy: Ken Burns; documentary: Remotion shot (local/Vast)
+  6. transition  legacy: crossfades; documentary: frame-aligned cuts
   7. subtitles word-accurate .srt from the timings measured in step 2/3
-  8. mix       narration + background music, ducked and loudness-normalised
+  8. mix       narration + ducked music; documentary: timed SFX and -14 LUFS
   9. assembly  picture + sound + captions -> output/final.mp4
  10. extras    thumbnail.jpg + youtube_metadata.json
 
@@ -40,6 +40,7 @@ import io
 import json
 import os
 import random
+import re
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -180,6 +181,11 @@ class Pipeline:
 
         # ---- B. a saved script.json already exists ------------------------
         elif self.script.load() and not topic:
+            engine = self.cfg.get("visual.engine", "images")
+            old_engine = self.script.data.get("visual_engine", "images")
+            if engine != old_engine:
+                raise ValueError(f"This project uses visual.engine={old_engine}; create a new project "
+                                 f"to use {engine}, or supply a new --script file.")
             info("reusing the existing script.json (pass --force to regenerate)")
             self.scenes = self.script.data["scenes"]
             self.manifest.finish_stage("script", {"scenes": len(self.scenes), "source": "cached"})
@@ -217,15 +223,23 @@ class Pipeline:
         scenes = data["scenes"]
         style_suffix = str(self.cfg.get("image.style_suffix", "") or "")
         negative = str(self.cfg.get("image.negative_prompt", "") or "")
-        scenes = script_stage.enrich_prompts(scenes, self.cfg, style_suffix, negative)
+        if self.cfg.get("visual.engine", "images") == "remotion":
+            from .shot_library import validate_scene
+            for i, sc in enumerate(scenes):
+                validate_scene(sc, i, auto_assign=(mode == "file" and not sc.get("shot")))
+            # Only LLM scripts without editorial timestamps use narration-led timing.
+        else:
+            scenes = script_stage.enrich_prompts(scenes, self.cfg, style_suffix, negative)
 
-        # choose motions (cycled so two scenes in a row never match)
-        preset = str(self.cfg.get("motion.preset", "auto"))
-        order = list(self.cfg.get("motion.auto_order") or [])
-        for i, sc in enumerate(scenes):
-            sc["motion"] = sc.get("motion") or motion_for_index(i, preset, order)
+        # The image workflow still uses its existing Ken Burns motion library.
+        if self.cfg.get("visual.engine", "images") != "remotion":
+            preset = str(self.cfg.get("motion.preset", "auto"))
+            order = list(self.cfg.get("motion.auto_order") or [])
+            for i, sc in enumerate(scenes):
+                sc["motion"] = sc.get("motion") or motion_for_index(i, preset, order)
 
         data["scenes"] = scenes
+        data["visual_engine"] = self.cfg.get("visual.engine", "images")
         data.setdefault("source", mode or "unknown")
         data["aspect"] = self.cfg.get("video.aspect")
         self.script.data = data
@@ -240,7 +254,7 @@ class Pipeline:
             words = len((sc.get("narration") or "").split())
             info(
                 f"  {sc['id']}  {sc.get('target_start', 0):6.1f}s -> {sc.get('target_end', 0):6.1f}s "
-                f"({sc.get('duration', 0):4.1f}s, {words:3d} words)  [{sc.get('motion')}]"
+                f"({sc.get('duration', 0):4.1f}s, {words:3d} words)  ({sc.get('shot') or sc.get('motion')})"
             )
         if problems:
             warn("script sanity checks:")
@@ -313,7 +327,7 @@ class Pipeline:
 
             def do():
                 return tts.synthesize(text, out, voice=use_voice, rate=use_rate,
-                                      pitch=pitch, target_duration=sc.get("duration"))
+                                      pitch=pitch, target_duration=None if self.script.data.get("narration_led") else sc.get("duration"))
 
             try:
                 res = retry(do, attempts=int(self.cfg.get("system.retry_attempts", 3)),
@@ -349,7 +363,7 @@ class Pipeline:
 
         asm = self.provider("assembly", self.cfg.get("motion.engine", "ffmpeg"))
         tcfg = self.cfg.section("timing")
-        fit = bool(tcfg.get("fit_to_timestamps", True))
+        fit = bool(tcfg.get("fit_to_timestamps", True)) and not (self.script.data.get("narration_led") and self.cfg.get("visual.engine") == "remotion")
         head_ms = int(self.cfg.get("tts.head_silence_ms", 150))
         tail_ms = int(self.cfg.get("tts.tail_silence_ms", 450))
         max_up = float(tcfg.get("max_speedup", 1.35))
@@ -358,7 +372,7 @@ class Pipeline:
         default_scene = float(tcfg.get("default_scene_seconds", 6.0))
 
         trans = self.cfg.section("transitions")
-        t_ext = float(trans.get("duration", 0.45)) if trans.get("enabled", True) else 0.0
+        t_ext = float(trans.get("duration", 0.45)) if trans.get("enabled", True) and self.cfg.get("visual.engine", "images") != "remotion" else 0.0
 
         parts: list[Path] = []
         for i, sc in enumerate(self.scenes):
@@ -372,6 +386,13 @@ class Pipeline:
                 natural = 0.0
                 warn(f"scene {sid} has no audio file - using silence")
 
+            if self.script.data.get("narration_led") and self.cfg.get("visual.engine") == "remotion":
+                # Preserve full speech and editorial hold; do not speed the voice up
+                # to match an LLM's guessed duration.
+                target = max(float(tcfg.get("min_duration", 2.0)),
+                             natural + (head_ms + tail_ms) / 1000.0,
+                             float(sc.get("duration_hint") or 0))
+                sc["duration"] = round(target, 3)
             sc["natural_duration"] = round(natural, 3)
             sc["speech_pad_before"] = round(head_ms / 1000.0, 3)
 
@@ -384,14 +405,14 @@ class Pipeline:
                 sc["target_end"] = float(sc["target_start"]) + target
                 sc["duration"] = round(target, 3)
 
-            if not self._wanted(sid):
-                sc["tempo"] = 1.0
-                continue
+            # Timing must include every scene: a partial narration track would
+            # silently desync the final video when --only is used for rerenders.
+            # Per-scene caching still skips unchanged audio blocks.
 
             # --- fit the speech to the timestamp window -------------------
             fitted = self.project.audio_dir / f"{sid}_fit.wav"
             key = self._cache_key("timing", sid, {
-                "natural": round(natural, 3), "target": round(target, 3),
+                "raw_fp": file_fingerprint(raw) if raw.exists() else None, "natural": round(natural, 3), "target": round(target, 3),
                 "fit": fit, "max_up": max_up, "max_down": max_down, "strategy": strategy,
             })
             if fit and natural > 0.05:
@@ -419,7 +440,7 @@ class Pipeline:
             block = self.project.audio_dir / f"{sid}_full.wav"
             bkey = self._cache_key("block", sid, {"src": str(fitted.name), "head": head_ms,
                                                   "target": round(target, 3),
-                                                  "pause": sc.get("extra_pause")})
+                                                  "pause": sc.get("extra_pause"), "src_fp": file_fingerprint(fitted) if fitted.exists() else None})
             if not self._skip(bkey, block):
                 head = self.project.tmp_dir / f"{sid}_head.wav"
                 tail = self.project.tmp_dir / f"{sid}_tail.wav"
@@ -454,12 +475,24 @@ class Pipeline:
             sc["end"] = round(cursor + float(sc.get("duration") or 0.0), 3)
             cursor = sc["end"]
         self.script.data["total_duration"] = round(cursor, 3)
+        # Canonical, absolute word positions: the same JSON drives captions and
+        # any future frame-accurate camera beats. Original TTS events stay in
+        # audio/words/ for re-alignment on a re-run.
+        for sc in self.scenes:
+            raw_words = read_json(self.project.scene_words(sc["id"]), {}).get("words") or []
+            tempo = float(sc.get("tempo") or 1)
+            offset = float(sc["start"]) + float(sc.get("speech_pad_before") or 0)
+            sc["word_timings"] = [
+                {"w": str(w["w"]), "start": round(offset + float(w["s"]) / tempo, 3),
+                 "end": round(min(float(sc["end"]), offset + float(w["e"]) / tempo), 3)}
+                for w in raw_words if offset + float(w["s"]) / tempo < float(sc["end"])
+            ]
 
         # --- the continuous narration track --------------------------------
         if parts:
             voice_full = self.project.voice_track
             vkey = self._cache_key("voicefull", "all", {
-                "parts": [p.name for p in parts], "total": round(cursor, 3),
+                "parts": [file_fingerprint(p) for p in parts], "total": round(cursor, 3),
             })
             if not self._skip(vkey, voice_full):
                 asm.concat_audio(parts, voice_full, exact_duration=max(cursor, 0.1))
@@ -481,6 +514,11 @@ class Pipeline:
     # STAGE 4 - IMAGES
     # ==================================================================
     def stage_images(self) -> list[dict]:
+        if self.cfg.get("visual.engine", "images") == "remotion":
+            self._ensure_scenes()
+            info("shot renderer selected: skipping AI image generation")
+            self.manifest.finish_stage("images", {"skipped": True})
+            return self.scenes
         step("STAGE 4 / 10 - IMAGE GENERATION")
         self.manifest.start_stage("images")
         self._ensure_scenes()
@@ -686,6 +724,8 @@ class Pipeline:
     # STAGE 5 - MOTION
     # ==================================================================
     def stage_motion(self) -> list[dict]:
+        if self.cfg.get("visual.engine", "images") == "remotion":
+            return self.stage_shots()
         step("STAGE 5 / 10 - MOTION (Ken Burns pan & zoom)")
         self.manifest.start_stage("motion")
         self._ensure_scenes()
@@ -779,6 +819,83 @@ class Pipeline:
         ok(f"{done} clip(s) rendered in {fmt_time(elapsed)}")
         return self.scenes
 
+    def stage_shots(self) -> list[dict]:
+        """Resumable shot renders, locally or as one bounded Vast SSH batch."""
+        from .providers.render_remotion import RemotionRenderer
+        from .providers.render_vast import VastRemotionRenderer
+        from .shot_library import LIBRARY_PATH, validate_scene
+        step("STAGE 5 / 10 - DOCUMENTARY SHOTS")
+        self.manifest.start_stage("motion")
+        self._ensure_scenes()
+        backend = str(self.cfg.get("visual.render_backend", "local"))
+        if backend not in ("local", "vast"):
+            raise ValueError("visual.render_backend must be local or vast")
+        renderer = (VastRemotionRenderer if backend == "vast" else RemotionRenderer)(self.cfg, self.project)
+        source_hash = renderer.source_fingerprint()
+        worker_fp = file_fingerprint(ROOT / "deploy/vast/render_worker.cjs") if backend == "vast" else ""
+        w, h = self.cfg.resolution()
+        fps = int(self.cfg.get("video.fps", 30))
+        asm = self.provider("assembly", str(self.cfg.get("motion.engine", "ffmpeg")))
+        jobs = []
+        for i, sc in enumerate(self.scenes):
+            validate_scene(sc, i)
+            if not re.fullmatch(r"s[0-9]{2,4}", str(sc.get("id", ""))):
+                raise ValueError(f"invalid scene id: {sc.get('id')!r}")
+            out = self.project.scene_clip(sc["id"])
+            for overlay in sc.get("text_overlays", []):
+                if overlay.get("t", 0) >= float(sc.get("duration") or 0):
+                    raise ValueError(f"scene {sc['id']}: overlay at {overlay['t']}s is outside the scene")
+            key = self._cache_key("motion", sc["id"], {
+                "scene": {k: sc.get(k) for k in ("shot", "params", "title", "text_overlays", "duration")},
+                "fps": fps, "resolution": (w, h), "crf": self.cfg.get("video.crf"),
+                "backend": backend, "renderer": source_hash, "worker": worker_fp,
+                "library": file_fingerprint(LIBRARY_PATH),
+            })
+            if self._skip(key, out):
+                sc["clip_path"] = str(out)
+                continue
+            if not self._wanted(sc["id"]):
+                if out.exists():
+                    sc["clip_path"] = str(out)
+                continue
+            jobs.append((sc, out, key))
+
+        def completed(sc: dict, out: Path, key: str):
+            got = asm.probe_duration(out)
+            expected = round(float(sc["duration"])*fps)/fps
+            if got <= 0 or abs(got-expected) > max(.15, 1/fps+.05):
+                out.unlink(missing_ok=True)
+                raise RuntimeError(f"scene {sc['id']} clip duration {got:.2f}s, expected {expected:.2f}s")
+            self.manifest.mark(key, out)
+            sc["clip_path"] = str(out)
+            self.script.save()
+            ok(f"  rendered {sc['id']} ({got:.2f}s)")
+
+        if jobs:
+            renderer.healthcheck()
+            if backend == "vast":
+                renderer.render_many([(sc, out) for sc, out, _ in jobs],
+                                     width=w, height=h, fps=fps,
+                                     completed=lambda sc, out: completed(
+                                         sc, out, next(key for s, _, key in jobs if s is sc)))
+            else:
+                workers = max(1, min(4, int(self.cfg.get("visual.local_parallel_scenes", 1))))
+                if workers == 1:
+                    for sc, out, key in jobs:
+                        renderer.render(sc, out, width=w, height=h, fps=fps)
+                        completed(sc, out, key)
+                else:
+                    with ThreadPoolExecutor(max_workers=workers) as pool:
+                        futures = {pool.submit(renderer.render, sc, out, width=w, height=h, fps=fps):
+                                   (sc, out, key) for sc, out, key in jobs}
+                        for future in as_completed(futures):
+                            sc, out, key = futures[future]
+                            future.result()
+                            completed(sc, out, key)
+        self.script.save()
+        self.manifest.finish_stage("motion", {"count": len(self.scenes), "engine": backend})
+        return self.scenes
+
     # ==================================================================
     # STAGE 6 - TRANSITIONS / CONCAT
     # ==================================================================
@@ -790,6 +907,7 @@ class Pipeline:
         engine = str(self.cfg.get("motion.engine", "ffmpeg"))
         asm = self.provider("assembly", engine)
         tcfg = self.cfg.section("transitions")
+        documentary = self.cfg.get("visual.engine", "images") == "remotion"
 
         clips: list[Path] = []
         for sc in self.scenes:
@@ -797,6 +915,8 @@ class Pipeline:
             if p.exists():
                 clips.append(p)
             else:
+                if documentary:
+                    die(f"Missing rendered shot {sc['id']}. Render all scenes before joining.")
                 warn(f"scene {sc['id']} has no rendered clip - it will be missing from the video")
 
         if not clips:
@@ -808,7 +928,7 @@ class Pipeline:
             # makes this join rebuild itself instead of silently keeping the old
             "clips": [f"{c.name}:{file_fingerprint(c)}" for c in clips],
             "type": tcfg.get("type"), "dur": tcfg.get("duration"),
-            "enabled": tcfg.get("enabled"), "vary": tcfg.get("vary"),
+            "enabled": tcfg.get("enabled") and not documentary, "vary": tcfg.get("vary"),
         })
         if self._skip(key, out):
             info("concat result is cached")
@@ -823,7 +943,7 @@ class Pipeline:
             transition=str(tcfg.get("type", "crossfade")),
             transition_duration=float(tcfg.get("duration", 0.45)),
             vary=bool(tcfg.get("vary", True)),
-            enabled=bool(tcfg.get("enabled", True)),
+            enabled=bool(tcfg.get("enabled", True)) and not documentary,
         )
 
         target = float(self.script.data.get("total_duration") or 0)
@@ -867,8 +987,15 @@ class Pipeline:
         # also write an ASS version - handy if you want karaoke colours later
         try:
             w, h = self.cfg.resolution()
-            subs_stage.cues_to_ass(cues, self.project.ass_file,
-                                   dict(scfg.get("style") or {}), play_w=w, play_h=h)
+            karaoke = scfg.get("karaoke")
+            if karaoke is None:
+                karaoke = self.cfg.get("visual.engine", "images") == "remotion"
+            if not (karaoke and source == "word_boundaries" and subs_stage.words_to_karaoke_ass(
+                    self.scenes, self.project.words_dir, self.project.ass_file,
+                    dict(scfg.get("style") or {}), play_w=w, play_h=h,
+                    max_words=int(scfg.get("words_per_line", 4)))):
+                subs_stage.cues_to_ass(cues, self.project.ass_file,
+                                       dict(scfg.get("style") or {}), play_w=w, play_h=h)
         except Exception as e:
             debug(f"ass export skipped: {e}")
 
@@ -903,18 +1030,26 @@ class Pipeline:
         music = None
         if music_src:
             music = self.project.music_track
-            mkey = self._cache_key("music", "prep", {"track": music_src.name,
-                                                     "duration": round(duration, 2)})
+            mkey = self._cache_key("music", "prep", {"track": file_fingerprint(music_src),
+                                                     "duration": round(duration, 2),
+                                                     "settings": self.cfg.section("audio.music")})
             if not self._skip(mkey, music):
                 audio_stage.prepare_music(asm, music_src, music, duration, self.cfg)
                 self.manifest.mark(mkey, music)
 
+        effects = []
+        if self.cfg.get("visual.engine", "images") == "remotion":
+            from . import sfx as sfx_stage
+            effects = sfx_stage.plan_events(self.scenes, self.cfg, self.project.audio_dir / "sfx")
+
         out = self.project.mix_track
         key = self._cache_key("mix", "final", {
-            "voice": voice.name, "voice_dur": round(voice_dur, 2),
-            "music": music_src.name if music_src else None,
+            "sfx": [(e["kind"], e["at"], e["gain_db"], file_fingerprint(e["path"])) for e in effects],
+            "voice": file_fingerprint(voice), "voice_dur": round(voice_dur, 2),
+            "music": file_fingerprint(music_src) if music_src else None,
             "duration": round(duration, 3),
             "audio_cfg": self.cfg.section("audio"),
+            "mix_impl": file_fingerprint(ROOT / "bot/providers/assembly_ffmpeg.py"),
         })
         if self._skip(key, out):
             info("mix is cached")
@@ -923,7 +1058,8 @@ class Pipeline:
 
         info(f"mixing {fmt_time(duration)} of audio"
              f"{' with music' if music else ' (no music)'} ...")
-        asm.build_mix(voice=voice, music=music, out_path=out, duration=duration)
+        asm.build_mix(voice=voice, music=music, out_path=out, duration=duration,
+                      sfx_events=effects)
         self.manifest.mark(key, out, {"duration": round(duration, 2)})
         ok(f"final audio: {fmt_time(asm.probe_duration(out))} ({human_bytes(out.stat().st_size)})")
         self.manifest.finish_stage("mix", {"duration": round(duration, 2)})
@@ -1146,6 +1282,26 @@ class Pipeline:
         if not self.scenes:
             die("script.json exists but contains no scenes")
 
+    def stage_qa(self) -> dict:
+        """Non-fatal post-export measurements saved next to the finished film."""
+        from .qa import inspect
+        step("DOCUMENTARY QUALITY CHECK")
+        self.manifest.start_stage("qa")
+        self._ensure_scenes()
+        asm = self.provider("assembly", str(self.cfg.get("motion.engine", "ffmpeg")))
+        report = inspect(asm, self.project.final_video, self.project.voice_track,
+                         float(self.script.data.get("total_duration") or 0),
+                         float(self.cfg.get("qa.silence_min_seconds", 2.5)),
+                         float(self.cfg.get("audio.master.target_lufs", -14.0)))
+        if self.cfg.get("tts.provider") == "test":
+            report["warnings"].append("Test TTS is an audible tone, not narration; replace before publishing")
+        out = self.project.output_dir / "qa.json"
+        write_json(out, report)
+        for issue in report["warnings"]:
+            warn("QA: " + issue)
+        self.manifest.finish_stage("qa", {"warnings": len(report["warnings"])})
+        return report
+
     # ==================================================================
     # RUN EVERYTHING
     # ==================================================================
@@ -1165,6 +1321,8 @@ class Pipeline:
             self.stage_mix()
             out = self.stage_assembly()
             self.stage_extras()
+            if self.cfg.get("visual.engine", "images") == "remotion" and self.cfg.get("qa.enabled", True):
+                self.stage_qa()
         finally:
             self.close_providers()
 

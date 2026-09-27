@@ -1,0 +1,11 @@
+{
+  "accretion_disk_orbit": {"family": "wide", "params": {"camera_orbit_speed": {"type": "number", "min": 0, "max": 1, "default": 0.15}, "disk_tilt_deg": {"type": "number", "min": 0, "max": 75, "default": 18}, "hole_spin": {"type": "number", "min": 0, "max": 1, "default": 0.6}}},
+  "event_horizon_flythrough": {"family": "close", "params": {"camera_speed": {"type": "number", "min": 0, "max": 2, "default": 0.4}, "lens_strength": {"type": "number", "min": 0.5, "max": 3, "default": 1.8}}},
+  "core_cross_section_diagram": {"family": "diagram", "params": {"highlight": {"type": "enum", "values": ["singularity", "event_horizon", "photon_sphere"], "default": "singularity"}}},
+  "two_perspectives_split": {"family": "diagram", "params": {}},
+  "spaghettification": {"family": "close", "params": {"stretch": {"type": "number", "min": 0.5, "max": 3, "default": 1.5}}},
+  "mass_scale_compare": {"family": "diagram", "params": {}},
+  "starfield_warp": {"family": "wide", "params": {"lens_strength": {"type": "number", "min": 0.5, "max": 3, "default": 1.5}}},
+  "title_card": {"family": "card", "params": {}},
+  "outro": {"family": "card", "params": {}}
+}
