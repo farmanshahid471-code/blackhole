@@ -13,8 +13,9 @@ from PIL import Image
 from bot.config import Config
 from bot.paths import Project
 from bot.pipeline import Pipeline
-from bot.reference import (MAX_BYTES, REFERENCE_FORMAT, canonical_url,
-                           captions_from_vtt, reference_context, study_reference)
+from bot.reference import (MAX_BYTES, REFERENCE_FORMAT, _caption_language,
+                           canonical_url, captions_from_vtt, reference_context,
+                           study_reference)
 from bot.script import generate_script
 
 VIDEO_ID = 'dQw4w9WgXcQ'
@@ -88,24 +89,48 @@ class ReferenceTests(unittest.TestCase):
                 {'formats': only_high, 'incomplete_formats': False}))
         self.assertEqual([f['format_id'] for f in selected], ['248'])
 
+    def test_only_one_native_language_caption_is_selected(self):
+        meta = {'subtitles': {'en-US': [{'ext': 'vtt'}]},
+                'automatic_captions': {'en-sq': [{'ext': 'vtt'}],
+                                       'en': [{'ext': 'vtt'}]}}
+        self.assertEqual(_caption_language(meta), 'en-US')
+        self.assertEqual(_caption_language({'automatic_captions': meta['automatic_captions']}), 'en')
+        self.assertIsNone(_caption_language({'automatic_captions': {'en-sq': [{'ext': 'vtt'}]}}))
+        # yt-dlp treats the language as regex: the escaped exact value MUST
+        # not match a translated track (en-sq).
+        import yt_dlp
+        with yt_dlp.YoutubeDL({'quiet': True, 'writesubtitles': True,
+                               'writeautomaticsub': True, 'subtitleslangs': ['en'],
+                               'subtitlesformat': 'vtt'}) as dl:
+            chosen = dl.process_subtitles('sample', {}, meta['automatic_captions'])
+        self.assertEqual(list(chosen), ['en'])
+
     def test_study_downloads_bounded_media_and_caches_text_only(self):
         class FakeDownloader:
             calls = 0
+            requested = []
             def __init__(self, options): self.options = options
             def __enter__(self): return self
             def __exit__(self, *a): return False
             def extract_info(self, url, download=False):
-                return {'id': VIDEO_ID, 'title': 'How gravity works', 'duration': 42}
+                return {'id': VIDEO_ID, 'title': 'How gravity works', 'duration': 42,
+                        'subtitles': {'en': [{'ext': 'vtt'}]},
+                        'automatic_captions': {'en-sq': [{'ext': 'vtt'}]}}
             def download(self, urls):
                 FakeDownloader.calls += 1
-                self.testcase.assertEqual(self.options['format'], REFERENCE_FORMAT)
-                self.testcase.assertEqual(self.options['max_filesize'], MAX_BYTES)
-                with self.testcase.assertRaisesRegex(RuntimeError, '150 MB'):
-                    self.options['progress_hooks'][0]({'downloaded_bytes': MAX_BYTES + 1})
                 scratch = Path(self.options['outtmpl']).parent
-                (scratch / 'source.webm').write_bytes(b'fake silent WebM video')
-                (scratch / 'source.en.vtt').write_text(
-                    'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nA star bends light\n')
+                if self.options.get('skip_download'):
+                    FakeDownloader.requested.extend(self.options['subtitleslangs'])
+                    self.testcase.assertEqual(self.options['subtitleslangs'], ['en'])
+                    (scratch / 'source.en.vtt').write_text(
+                        'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nA star bends light\n')
+                else:
+                    self.testcase.assertEqual(self.options['format'], REFERENCE_FORMAT)
+                    self.testcase.assertEqual(self.options['max_filesize'], MAX_BYTES)
+                    self.testcase.assertNotIn('writesubtitles', self.options)
+                    with self.testcase.assertRaisesRegex(RuntimeError, '150 MB'):
+                        self.options['progress_hooks'][0]({'downloaded_bytes': MAX_BYTES + 1})
+                    (scratch / 'source.webm').write_bytes(b'fake silent WebM video')
                 return 0
         FakeDownloader.testcase = self
         def fake_ffmpeg(args, **kwargs):
@@ -119,7 +144,8 @@ class ReferenceTests(unittest.TestCase):
                  patch('bot.reference._vision', return_value='') as vision:
                 report = study_reference(URL, project, Config({}))
                 cached = study_reference(URL, project, Config({}))
-            self.assertEqual(FakeDownloader.calls, 1)
+            self.assertEqual(FakeDownloader.calls, 2)  # one subtitle, one video
+            self.assertEqual(FakeDownloader.requested, ['en'])
             self.assertEqual(ffmpeg.call_count, 8)
             vision.assert_called_once()
             self.assertEqual(report, cached)
@@ -136,8 +162,13 @@ class ReferenceTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *args): return False
             def extract_info(self, url, download=False):
-                return {'id': VIDEO_ID, 'duration': self.duration}
+                return {'id': VIDEO_ID, 'duration': self.duration,
+                        'subtitles': {'en': [{'ext': 'vtt'}]}}
             def download(self, urls):
+                if self.options.get('skip_download'):
+                    (Path(self.options['outtmpl']).parent / 'source.en.vtt').write_text(
+                        'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n')
+                    return 0
                 return 1  # yt-dlp may report an error via return code
         with tempfile.TemporaryDirectory() as tmp:
             project = Project(Path(tmp), 'video').create()
@@ -176,17 +207,78 @@ class ReferenceTests(unittest.TestCase):
                 def extract_info(self, url, download=False):
                     return {'id': VIDEO_ID, 'title': 'silent', 'duration': 20}
                 def download(self, urls):
-                    (Path(self.options['outtmpl']).parent / 'source.mp4').write_bytes(b'video')
-                    return 0
-            def fake_ffmpeg(args, **kwargs):
-                Image.new('RGB', (320, 180)).save(args[-1])
-                return Mock(returncode=0, stderr='')
-            with patch.dict(sys.modules, {'yt_dlp': types.SimpleNamespace(YoutubeDL=FakeDownloader)}), \
-                 patch('bot.reference.subprocess.run', side_effect=fake_ffmpeg):
-                with self.assertRaisesRegex(RuntimeError, 'No usable captions'):
+                    raise AssertionError('should not download media for an uncaptioned reference')
+            with patch.dict(sys.modules, {'yt_dlp': types.SimpleNamespace(YoutubeDL=FakeDownloader)}):
+                with self.assertRaisesRegex(RuntimeError, 'No English, Urdu or Hindi reference captions'):
                     study_reference(URL, project, Config({}))
             self.assertFalse((project.dir / 'reference.json').exists())
             self.assertFalse((project.tmp_dir / 'reference').exists())
+
+    def test_subtitle_429_stops_without_vision_but_vision_can_study_frames(self):
+        class FakeDownloader:
+            video_downloads = 0
+            subtitle_downloads = 0
+            def __init__(self, options): self.options = options
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def extract_info(self, url, download=False):
+                return {'id': VIDEO_ID, 'title': 'Reference', 'duration': 30,
+                        'automatic_captions': {
+                            'en-sq': [{'ext': 'vtt'}], 'en': [{'ext': 'vtt'}]}}
+            def download(self, urls):
+                if self.options.get('skip_download'):
+                    FakeDownloader.subtitle_downloads += 1
+                    if self.options['subtitleslangs'] != ['en']:
+                        raise AssertionError('Requested a translated subtitle track')
+                    raise RuntimeError("HTTP Error 429: Too Many Requests")
+                FakeDownloader.video_downloads += 1
+                (Path(self.options['outtmpl']).parent / 'source.webm').write_bytes(b'video')
+                return 0
+        def fake_ffmpeg(args, **kwargs):
+            Image.new('RGB', (320, 180)).save(args[-1])
+            return Mock(returncode=0, stderr='')
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = types.SimpleNamespace(YoutubeDL=FakeDownloader)
+            without = Project(Path(tmp), 'without').create()
+            with patch.dict(sys.modules, {'yt_dlp': downloader}):
+                with self.assertRaisesRegex(RuntimeError, 'rate-limiting subtitles'):
+                    study_reference(URL, without, Config({}))
+            self.assertEqual(FakeDownloader.video_downloads, 0)
+            self.assertEqual(FakeDownloader.subtitle_downloads, 1)
+            self.assertFalse((without.dir / 'reference.json').exists())
+            self.assertFalse((without.tmp_dir / 'reference').exists())
+            with_vision = Project(Path(tmp), 'vision').create()
+            cfg = Config({'reference': {'vision': {'model': 'mock-vision'}}})
+            with patch.dict(sys.modules, {'yt_dlp': downloader}), \
+                 patch('bot.reference.subprocess.run', side_effect=fake_ffmpeg), \
+                 patch('bot.reference._vision', return_value='Observed blue diagrams'):
+                report = study_reference(URL, with_vision, cfg)
+            self.assertEqual(FakeDownloader.video_downloads, 1)
+            self.assertEqual(FakeDownloader.subtitle_downloads, 2)
+            self.assertFalse(report['has_captions'])
+            self.assertTrue(report['vision_analyzed'])
+            self.assertEqual(report['transcript'], '')
+            self.assertFalse((with_vision.tmp_dir / 'reference').exists())
+
+    def test_empty_subtitle_track_does_not_silently_study_video(self):
+        class FakeDownloader:
+            def __init__(self, options): self.options = options
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def extract_info(self, url, download=False):
+                return {'id': VIDEO_ID, 'duration': 20,
+                        'automatic_captions': {'en': [{'ext': 'vtt'}]}}
+            def download(self, urls):
+                if not self.options.get('skip_download'):
+                    raise AssertionError('video must not be downloaded without usable captions')
+                return 0
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Project(Path(tmp), 'video').create()
+            with patch.dict(sys.modules, {'yt_dlp': types.SimpleNamespace(YoutubeDL=FakeDownloader)}):
+                with self.assertRaisesRegex(RuntimeError, 'No usable captions'):
+                    study_reference(URL, project, Config({}))
+            self.assertFalse((project.tmp_dir / 'reference').exists())
+            self.assertFalse((project.dir / 'reference.json').exists())
 
     def test_vision_only_when_explicitly_configured(self):
         from bot.reference import _vision

@@ -179,6 +179,27 @@ def _visual_samples(video: Path, duration: float, samples_dir: Path, cfg) -> tup
     return frames, report
 
 
+def _caption_language(meta: dict) -> str | None:
+    """Pick ONE usable track; never request every auto-translated language.
+
+    yt-dlp treats subtitleslangs entries as regexes. A pattern like en.*
+    also requests translations such as en-sq and can trigger YouTube 429s.
+    """
+    manual = meta.get("subtitles") or {}
+    auto = meta.get("automatic_captions") or {}
+    preferred = ("en", "en-US", "en-GB", "en-AU", "en-CA",
+                 "ur", "ur-PK", "hi", "hi-IN")
+    for tracks, choices in ((manual, preferred),
+                            (auto, ("en-orig", "en", "ur-orig", "ur", "hi-orig", "hi"))):
+        if not isinstance(tracks, dict):
+            continue
+        for choice in choices:
+            for key, formats in tracks.items():
+                if key.lower() == choice.lower() and formats:
+                    return key
+    return None
+
+
 def study_reference(link: str, project, cfg) -> dict:
     """Download one bounded reference, extract captions/frames, then delete footage.
 
@@ -204,6 +225,9 @@ def study_reference(link: str, project, cfg) -> dict:
     except ImportError as exc:
         raise RuntimeError("YouTube reference needs yt-dlp. Install it with: python -m pip install yt-dlp") from exc
     scratch = project.tmp_dir / "reference"
+    # Discard leftovers from an interrupted prior attempt; never mistake stale
+    # captions or media for a successful download on this attempt.
+    shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True, exist_ok=True)
     # Do not keep or publish the reference's video or audio in the project.
     try:
@@ -221,21 +245,52 @@ def study_reference(link: str, project, cfg) -> dict:
         def cap_progress(status):
             if status.get("downloaded_bytes", 0) > MAX_BYTES:
                 raise RuntimeError("Reference exceeds 150 MB download limit.")
+        # Caption requests are separate from the video download: an HTTP 429
+        # for subtitles must not interrupt video sampling when an opt-in vision
+        # model can still provide a real (captionless) study.
+        language = _caption_language(meta)
+        subtitle_error = ""
+        if language:
+            sub_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
+                        "skip_download": True, "format": REFERENCE_FORMAT,
+                        "outtmpl": str(scratch / "source.%(ext)s"),
+                        "socket_timeout": 20, "retries": 1,
+                        "writesubtitles": True, "writeautomaticsub": True,
+                        "subtitleslangs": [re.escape(language)], "subtitlesformat": "vtt"}
+            try:
+                with yt_dlp.YoutubeDL(sub_opts) as dl:
+                    if dl.download([url]) != 0:
+                        raise RuntimeError("yt-dlp could not download the selected subtitle track.")
+            except Exception as exc:
+                subtitle_error = str(exc)
+                if not vision_model:
+                    raise RuntimeError("Reference captions could not be downloaded: "
+                                       f"{subtitle_error}. YouTube may be rate-limiting "
+                                       "subtitles; wait and retry later or use a different "
+                                       "public video. No script was generated.") from exc
+                info("reference captions unavailable; continuing with the configured vision model")
+        elif not vision_model:
+            raise RuntimeError("No English, Urdu or Hindi reference captions were advertised. "
+                               "Try a captioned video or configure reference.vision.model.")
+
+        captions = sorted(scratch.glob("source.*.vtt"))
+        transcript = captions_from_vtt(captions[0].read_text(encoding="utf-8-sig")) if captions else ""
+        if not transcript and not vision_model:
+            raise RuntimeError("No usable captions were available" +
+                               (f" ({subtitle_error})" if subtitle_error else "") +
+                               ". Try again later or use a captioned video; "
+                               "a captionless reference needs reference.vision.model.")
         opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
                 "outtmpl": str(scratch / "source.%(ext)s"),
                 "format": REFERENCE_FORMAT,
                 "max_filesize": MAX_BYTES, "progress_hooks": [cap_progress],
-                "socket_timeout": 20, "retries": 2, "fragment_retries": 2,
-                "writesubtitles": True, "writeautomaticsub": True,
-                "subtitleslangs": ["en.*", "ur.*", "hi.*"], "subtitlesformat": "vtt"}
+                "socket_timeout": 20, "retries": 2, "fragment_retries": 2}
         with yt_dlp.YoutubeDL(opts) as dl:
             if dl.download([url]) != 0:
                 raise RuntimeError("yt-dlp could not download the reference video stream.")
         videos = [p for p in scratch.glob("source.*") if p.suffix.lower() in (".mp4", ".mkv", ".webm")]
         if not videos or videos[0].stat().st_size > MAX_BYTES:
             raise RuntimeError("Could not download a small reference video; it may be restricted or too large.")
-        captions = sorted(scratch.glob("source.*.vtt"))
-        transcript = captions_from_vtt(captions[0].read_text(encoding="utf-8-sig")) if captions else ""
         frames, visual_metrics = _visual_samples(videos[0], duration, scratch / "frames", cfg)
         vision = _vision(frames, cfg)
         if not transcript and not vision:

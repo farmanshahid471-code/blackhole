@@ -19,10 +19,16 @@ available when you provide your own script; your script always wins.
   reduced resolution when available (video-only WebM is supported; reference
   audio is not needed or downloaded). FFmpeg samples eight ordered stills.
   A higher-resolution video stream is tried only if no reduced-resolution
-  stream is available; the same 150 MB limit still applies. It also requests
-  available English, Urdu or Hindi captions (including automatic captions).
-  Downloading can fail when YouTube restricts the video, requires sign-in, or
-  changes its delivery. Use material you have the right to analyze.
+  stream is available; the same 150 MB limit still applies. It requests only
+  **one** English, Urdu or Hindi caption track (including automatic captions),
+  preferring original/manual captions over machine-translated language variants.
+  YouTube may rate-limit subtitle requests with HTTP 429. Without a configured
+  vision model, that stops stage 1 **before** any GPU rental or video download:
+  wait and retry later or pick a different captioned public video. When a
+  vision model is configured, a failed subtitle request can still produce a
+  vision-only study, labeled as having no captions. Downloading can also fail
+  when YouTube restricts the video, requires sign-in, or changes its delivery.
+  Use material you have the right to analyze.
 - Without a vision model: the script writer gets time-coded transcript excerpts,
   the video's title and duration, and measured frame palette/changes. This
   supports **narrative flow** and rough pacing. It does **not** recognize
