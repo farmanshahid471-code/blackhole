@@ -145,6 +145,17 @@ Everything that crosses the event horizon is gone forever.
                   <input type="text" id="topicInstructions" placeholder="calm tone, no jargon, 8th grade level">
                 </label>
               </div>
+              <label class="field">
+                <span>YouTube reference video (optional)</span>
+                <input type="url" id="topicReferenceVideo"
+                       placeholder="https://www.youtube.com/watch?v=...">
+                <small class="hint">Studies captions, scene rhythm and sampled frames before writing your script.
+                  For visual subjects/animation details, set <code>reference.vision.model</code>
+                  in Settings &amp; keys &rarr; Advanced and provide a vision API or local Ollama.
+                  If a vision API is configured, sampled frames are sent to it and may incur charges.
+                  Inspires an original video; it cannot clone someone else's animation.
+                  Maximum 15 minutes; public videos with captions work best.</small>
+              </label>
               <div class="banner" style="margin-top:4px">
                 <span>&#9432;</span>
                 <div>This mode needs an LLM. Free options: <b>Ollama</b> (offline, no

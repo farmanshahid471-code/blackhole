@@ -41,6 +41,7 @@ psutil>=5.9.0             # reads CPU/RAM so the bot can warn before a render
 #      lets the bot work on a PC that has never had ffmpeg installed.
 # ---------------------------------------------------------------------------
 imageio-ffmpeg>=0.4.9     # `pip install imageio-ffmpeg` -> bundled ffmpeg
+yt-dlp>=2025.02.19        # optional YouTube reference study in topic mode
 
 # ---------------------------------------------------------------------------
 # TIER 3 - OPTIONAL LLM / TTS / IMAGE PROVIDERS

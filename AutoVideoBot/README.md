@@ -23,6 +23,17 @@ Built exactly around this stack (every line is a hot-swappable provider):
 
 ---
 
+## New: shot-based black-hole documentary (opt-in)
+
+Set `visual.engine=remotion` to replace AI-image/Ken Burns scenes with a fixed
+nine-shot Remotion/WebGL/SVG library. The shader now integrates Schwarzschild
+optical-metric rays (not a Kerr simulation). LLM scripts choose only validated
+shots; voice timings drive scene duration, word-level captions, procedural
+transition SFX and a -14 LUFS documentary mix. Render locally or optionally
+on a billed Vast GPU instance. Node/Chromium are required for local rendering;
+the default workflow below is **unchanged**. See [docs/16-DOCUMENTARY-PIPELINE.md](docs/16-DOCUMENTARY-PIPELINE.md)
+for installation, an example JSON scene graph, limitations and next steps.
+
 ## 30-second start (zero money, zero accounts)
 
 ### Windows - double-click, no commands at all
@@ -114,6 +125,7 @@ python main.py run "vid" --script s.txt --set image.provider=vast
 | [docs/13-COSTS.md](docs/13-COSTS.md) | What each path costs per finished video |
 | [docs/14-WEB-UI.md](docs/14-WEB-UI.md) | **The point-and-click interface:** every screen, every button, troubleshooting |
 | [docs/15-APIS-AND-REQUIREMENTS.md](docs/15-APIS-AND-REQUIREMENTS.md) | **What you actually need and how it works:** every API call, every key, costs, three ready-made setups |
+| [docs/16-DOCUMENTARY-PIPELINE.md](docs/16-DOCUMENTARY-PIPELINE.md) | New opt-in shot renderer and scene graph |
 
 ## Files in the top folder (what each one is for)
 

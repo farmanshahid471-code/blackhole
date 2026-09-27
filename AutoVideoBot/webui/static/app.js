@@ -301,6 +301,7 @@ async function startBuild() {
     topic: MODE === 'topic' ? $('topicText').value : '',
     duration: MODE === 'topic' ? Number($('topicDuration').value || 120) : null,
     instructions: MODE === 'topic' ? $('topicInstructions').value : '',
+    reference_video: MODE === 'topic' ? $('topicReferenceVideo').value.trim() : '',
     quality: $('quality').value,
     aspect: $('aspect').value,
     fps: $('fps').value,

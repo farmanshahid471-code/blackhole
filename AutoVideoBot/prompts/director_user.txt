@@ -1,0 +1,4 @@
+Create a {language} space/science documentary on: {topic}
+Aim for roughly {duration} seconds and about {scene_count} scenes, with {min_words}–{max_words} words per scene. Aspect: {aspect}.
+Direction: {extra}
+Return only the specified JSON. Narration before duration hints; use only listed shots and params.
