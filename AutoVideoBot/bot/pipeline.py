@@ -576,7 +576,7 @@ class Pipeline:
             try:
                 results = img.generate_many(clean_jobs)
             except Exception as e:
-                fail(f"batch generation failed: {str(e)[:200]} - trying one at a time")
+                fail(f"batch generation failed: {str(e)[:400]} - trying one at a time")
                 results = []
 
         if len(results) != len(jobs):
@@ -619,7 +619,7 @@ class Pipeline:
                     cfg_scale=j["cfg_scale"], seed=j["seed"],
                 )
             except Exception as e:
-                fail(f"  {j['scene_id']}: {str(e)[:180]}")
+                fail(f"  {j['scene_id']}: {str(e)[:320]}")
                 return i, None
 
         done = 0

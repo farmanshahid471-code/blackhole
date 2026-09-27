@@ -124,7 +124,18 @@ class EdgeTTSProvider(TTSProvider):
                      rate: str, pitch: str, volume: str) -> list[dict[str, Any]]:
         """Run one synthesis and collect audio + word boundaries together."""
         edge_tts = self._module()
-        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
+        # edge-tts 7.x switched the default metadata to SentenceBoundary,
+        # which is useless for word-accurate captions - ask for WordBoundary
+        # explicitly. (6.x has no such parameter, hence the signature check.)
+        extra: dict[str, Any] = {}
+        try:
+            import inspect
+            if "boundary" in inspect.signature(edge_tts.Communicate.__init__).parameters:
+                extra["boundary"] = "WordBoundary"
+        except Exception:
+            pass
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch,
+                                           volume=volume, **extra)
 
         words: list[dict[str, Any]] = []
         ensure_dir(out_path.parent)

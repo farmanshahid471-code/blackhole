@@ -56,7 +56,14 @@ from ..utils import debug, die, info, run_cmd, which, warn
 from . import _wire
 from .base import ImageProvider
 
-API_BASE = "https://console.vast.ai/api/v0"
+# Vast has moved hosts over time (console.vast.ai -> cloud.vast.ai). Try the
+# current one first, fall back to the old one. NEVER follow cross-host
+# redirects with requests: it silently drops the Authorization header and the
+# API then answers 401 even when the key is perfect.
+API_BASES = (
+    "https://cloud.vast.ai/api/v0",
+    "https://console.vast.ai/api/v0",
+)
 
 
 def _fmt_metric(offer: dict[str, Any], *keys: str) -> str:
@@ -196,6 +203,7 @@ class VastProvider(ImageProvider):
         self._tunnel: subprocess.Popen | None = None
         self._local_port: int = 0
         self._owns_instance = False
+        self._api_base: str | None = None   # which API host answered last time
 
     # ==================================================================
     # API plumbing
@@ -215,25 +223,51 @@ class VastProvider(ImageProvider):
     def _api(self, method: str, path: str, body: dict | None = None,
              timeout: int = 60) -> Any:
         import requests
-        url = f"{API_BASE}{path}"
         headers = {"Authorization": f"Bearer {self._key()}", "Accept": "application/json"}
-        debug(f"vast: {method} {url}")
-        if method == "GET":
-            r = requests.get(url, headers=headers, timeout=timeout)
-        elif method == "POST":
-            r = requests.post(url, headers=headers, json=body or {}, timeout=timeout)
-        elif method == "PUT":
-            r = requests.put(url, headers=headers, json=body or {}, timeout=timeout)
-        else:
-            r = requests.delete(url, headers=headers, timeout=timeout)
-        if r.status_code >= 400:
-            raise RuntimeError(
-                f"Vast.ai API {method} {path} failed: HTTP {r.status_code} {r.text[:300]}"
-            )
-        try:
-            return r.json()
-        except Exception:
-            return {"raw": r.text}
+        short = path.split("?")[0]
+        bases = (self._api_base,) if self._api_base else API_BASES
+        last: RuntimeError | None = None
+        for base in bases:
+            url = f"{base}{path}"
+            debug(f"vast: {method} {url}")
+            try:
+                r = requests.request(
+                    method, url, headers=headers,
+                    json=body if method in ("POST", "PUT") else None,
+                    timeout=timeout, allow_redirects=False,
+                )
+            except Exception as e:
+                last = RuntimeError(
+                    f"Vast.ai API {method} {short} -> network problem: {str(e)[:160]}")
+                continue
+            if r.status_code in (301, 302, 303, 307, 308):
+                # a redirect to another host would strip our Authorization
+                # header - just talk to the other host directly instead
+                last = RuntimeError(
+                    f"Vast.ai API {method} {short} -> HTTP {r.status_code} "
+                    f"redirect at {base} - trying the other API host")
+                continue
+            if r.status_code >= 400:
+                body_txt = (r.text or "").strip().replace("\n", " ")[:200]
+                hint = ""
+                if r.status_code in (401, 403):
+                    hint = (" |  your Vast.ai API key was REJECTED - check .env -> "
+                            "VAST_API_KEY (no quotes, no spaces), or create a new key "
+                            "at https://cloud.vast.ai/account/  ->  Keys")
+                elif r.status_code == 402:
+                    hint = (" |  not enough Vast.ai credit - add credit at "
+                            "https://cloud.vast.ai/billing/")
+                last = RuntimeError(
+                    f"Vast.ai API {method} {short} -> HTTP {r.status_code}: {body_txt}{hint}")
+                if r.status_code not in (404, 410, 500, 502, 503):
+                    raise last          # auth/billing errors are the same everywhere
+                continue
+            self._api_base = base       # remember the host that works
+            try:
+                return r.json()
+            except Exception:
+                return {"raw": r.text}
+        raise last or RuntimeError(f"Vast.ai API {method} {short} -> no API host reachable")
 
     # ==================================================================
     # healthcheck
