@@ -242,7 +242,15 @@ Test-Path "$env:WINDIR\System32\OpenSSH\scp.exe"
 
 The bot now checks **both** executables before searching/renting, so a missing
 client will not cost a booted GPU. This check does not prove that the network
-can reach the chosen host or that your SSH key is registered with Vast; those
-can only be verified by an actual connection. When using `mode: existing`,
-you can test connectivity without starting a **new** rental. If a run fails,
+can reach the chosen host or that your SSH key is registered with Vast. A
+newly created instance can report `running` before its SSH proxy accepts
+connections; the bot now checks an authenticated SSH handshake, waiting up to
+`image.vast.ssh_ready_timeout` (default 60 additional seconds) for transient
+refusals before uploading the server. If it never connects, the bot destroys
+an instance it rented and stops rather than immediately renting another.
+Vast still bills for the time the instance existed; verify its status at the
+Vast dashboard and don't retry until you've checked network access or changed
+hosts. A live connection cannot be guaranteed by an offline preflight.
+When using `mode: existing`, you can test connectivity without starting a
+**new** rental. If a run fails,
 check the Vast dashboard for instances still billing before trying again.

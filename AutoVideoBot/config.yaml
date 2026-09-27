@@ -219,6 +219,7 @@ image:
     server_port: 7860
     server_start_cmd: "bash start_server.sh"
     boot_timeout: 600                # seconds to wait for the machine to wake up
+    ssh_ready_timeout: 60           # extra seconds for Vast's SSH proxy after API says running
     destroy_after_use: true          # true = stop paying the moment rendering is done
     keep_alive_ping: 30              # seconds between "are you still there?" pings
 

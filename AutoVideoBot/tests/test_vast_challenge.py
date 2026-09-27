@@ -262,6 +262,47 @@ class VastSearchTests(unittest.TestCase):
         self.assertNotIn('bundle_id', body)
         self.assertTrue(p._owns_instance)
 
+    def test_ssh_refusal_retries_only_during_short_readiness_window(self):
+        p = self.provider()
+        p._ssh = {'host': 'ssh1.vast.ai', 'port': 22950, 'user': 'root'}
+        p._ssh_exe = 'ssh'
+        clock = iter([0, 0, 1, 2])
+        with patch('bot.providers.image_vast.time.monotonic', side_effect=lambda: next(clock)), \
+             patch('bot.providers.image_vast.time.sleep') as sleep, \
+             patch('bot.providers.image_vast.run_cmd', side_effect=[
+                 RuntimeError('banner exchange: Connection refused'), None]) as command:
+            p._probe_ssh()
+        self.assertEqual(command.call_count, 2)
+        self.assertIn('BatchMode=yes', command.call_args.args[0])
+        sleep.assert_called_once()
+
+    def test_ssh_refusal_expires_without_uploading_or_re_renting(self):
+        p = self.provider()
+        p._ssh = {'host': 'ssh1.vast.ai', 'port': 22950, 'user': 'root'}
+        p._ssh_exe = 'ssh'
+        p.cfg.set('image.vast.ssh_ready_timeout', 1)
+        clock = iter([0, 0, 2])
+        with patch('bot.providers.image_vast.time.monotonic', side_effect=lambda: next(clock)), \
+             patch('bot.providers.image_vast.run_cmd',
+                   side_effect=RuntimeError('Connection refused')) as command, \
+             patch.object(p, '_upload_server') as upload:
+            with self.assertRaisesRegex(RuntimeError, 'SSH port still refuses connections'):
+                p._probe_ssh()
+            upload.assert_not_called()
+        self.assertEqual(command.call_count, 2)
+
+    def test_ssh_authentication_failure_is_not_retried(self):
+        p = self.provider()
+        p._ssh = {'host': 'ssh1.vast.ai', 'port': 22950, 'user': 'root'}
+        p._ssh_exe = 'ssh'
+        with patch('bot.providers.image_vast.run_cmd',
+                   side_effect=RuntimeError('Permission denied (publickey)')) as command, \
+             patch('bot.providers.image_vast.time.sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'authentication/setup failed'):
+                p._probe_ssh()
+        command.assert_called_once()
+        sleep.assert_not_called()
+
     def test_create_instance_network_failure_is_never_replayed(self):
         import requests
         with patch.dict(os.environ, {'VAST_API_KEY': 'fake-key'}), \

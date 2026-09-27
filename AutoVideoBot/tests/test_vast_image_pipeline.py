@@ -24,6 +24,22 @@ class VastImagePipelineTests(unittest.TestCase):
         p._providers['image:vast'] = img
         return p, img
 
+    def test_persisted_short_topic_script_cannot_rent_on_stage_four_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p, img = self.setup_pipeline(tmp)
+            p.scenes = [{'id': f's{i:02d}', 'narration': 'Tiny line',
+                         'image_prompt': 'A nebula', 'target_start': i * 9,
+                         'target_end': (i + 1) * 9, 'duration': 9}
+                        for i in range(10)]
+            p.script.data.update({'scenes': p.scenes, 'source': 'topic',
+                                  'requested_duration': 600, 'total_duration': 90})
+            p.script.save()
+            with self.assertRaisesRegex(ValueError, 'requested 600s, received 90s'):
+                p.stage_images()
+            img.healthcheck.assert_not_called()
+            img.generate_many.assert_not_called()
+            self.assertFalse(p.manifest.stage_done('images'))
+
     def test_failed_batch_aborts_once_with_no_placeholders(self):
         with tempfile.TemporaryDirectory() as tmp:
             p, img = self.setup_pipeline(tmp)

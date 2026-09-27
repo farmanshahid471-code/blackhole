@@ -537,6 +537,15 @@ class Pipeline:
         self._ensure_scenes()
 
         name = str(self.cfg.get("image.provider", "pollinations"))
+        if name == "vast" and self.script.data.get("source") == "topic":
+            # An older build may already have persisted an incomplete script.
+            # Re-check it here, even on a stage-4-only resume, before creating
+            # a provider that can rent a GPU.
+            from .script import _validate_generated_chunk
+            requested = float(self.script.data.get("requested_duration") or 0)
+            if requested >= 60:
+                _validate_generated_chunk(self.scenes, requested, False,
+                                          chapter=1, total=1)
         img = self.provider("image", name)
         # Rented batch providers are only checked when there is actually work
         # to do. Cached scenes should not require API/network access.

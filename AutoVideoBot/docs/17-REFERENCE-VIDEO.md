@@ -71,3 +71,17 @@ Install/update dependencies via `INSTALL-WINDOWS.bat` or `pip install -r
 requirements.txt`. If you already installed an older copy, run `python -m pip
 install yt-dlp` in that copy's virtual environment, or extract the latest ZIP
 and run its installer.
+
+## Long scripts and paid GPU safety
+
+A 10-minute topic-mode script no longer asks an LLM to fit roughly 67 scenes
+into one short response: the bot requests bounded chapters (about two minutes
+each), combines their scene timings, and checks duration, narration and image
+prompts before writing `script.json`. If a response is incomplete, stage 1
+stops instead of forwarding a mostly empty video to TTS and a rented GPU.
+If a project already has an incomplete `script.json` from an older version,
+stage 4 also refuses to rent Vast for that topic script; regenerate stage 1
+before trying paid images. The bot cannot guarantee an LLM will write a good
+10-minute script. Use the stage-1-only `python main.py script <project> --topic
+"..." --duration 600 --reference-video "..."` command first, review
+`script.json`, and only then decide whether to pay for image generation.

@@ -535,6 +535,41 @@ class VastProvider(ImageProvider):
             f"  Try again (another machine) or raise image.vast.boot_timeout."
         )
 
+    def _probe_ssh(self) -> None:
+        """Require an authenticated SSH handshake, not merely API 'running'.
+
+        Vast's SSH proxy/forwarded port can appear after the VM reports
+        running. Wait briefly for transient connection refusals; do not retry
+        bad keys or let a billed instance spin for the full model boot timeout.
+        """
+        assert self._ssh
+        deadline = time.monotonic() + max(1, float(self.setting("image.vast.ssh_ready_timeout", 60)))
+        target = f"{self._ssh['user']}@{self._ssh['host']}"
+        info("  checking SSH access before uploading the server ...")
+        while True:
+            try:
+                run_cmd(self._ssh_base() + ["-o", "BatchMode=yes", target, "true"],
+                        capture=True, check=True, timeout=30, quiet=True)
+                info("  SSH authenticated; ready to upload")
+                return
+            except RuntimeError as exc:
+                message = str(exc).lower()
+                transient = any(x in message for x in (
+                    "connection refused", "connection timed out", "connection reset",
+                    "connection closed", "banner exchange", "operation timed out"))
+                if not transient:
+                    raise RuntimeError(f"Vast SSH authentication/setup failed: {exc}") from exc
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise RuntimeError(
+                        "Vast says the machine is running, but its SSH port still "
+                        "refuses connections. The bot will destroy a rented instance. "
+                        "Check your Vast dashboard; do not pay for another retry "
+                        "until the host/SSH proxy is reachable from this PC. "
+                        f"Last error: {str(exc)[-280:]}") from exc
+                info(f"  SSH proxy not ready yet; waiting {min(8, left):.0f}s ...")
+                time.sleep(min(8, left))
+
     # ==================================================================
     # 3. get the code onto the machine
     # ==================================================================
@@ -663,6 +698,7 @@ class VastProvider(ImageProvider):
             self._create_instance(offer)
 
         self._ssh = self._wait_for_ssh()
+        self._probe_ssh()
         remote = self._upload_server()
         port = self._start_server(remote)
         self._wait_for_server(port)
