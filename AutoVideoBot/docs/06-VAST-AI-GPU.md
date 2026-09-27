@@ -194,18 +194,39 @@ ssh -V
 Get-Command scp
 ```
 
-If missing, install **OpenSSH Client** (not OpenSSH Server) in **Settings >
-Optional features > Add a feature**, or run the following in an
+**Check your Windows version first:** Windows 10 build **17763 (1809)** or
+newer supports the built-in OpenSSH *Optional Feature*. On an older build such
+as **15063 (1703)**, `Add-WindowsCapability`/DISM cannot install this feature;
+`Online: True` is not proof that it was installed. Verify `State: Installed`
+with `Get-WindowsCapability -Online -Name 'OpenSSH.Client*'` before continuing.
+
+On a supported build, install **OpenSSH Client** (not OpenSSH Server) in
+**Settings > Optional features > Add a feature**, or run the following in an
 Administrator PowerShell window:
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 ```
 
-Close and reopen the terminal and the bot, then check again. If Windows has
-OpenSSH installed but it is absent from PATH, the bot also looks for both
-`ssh.exe` and `scp.exe` under `%WINDIR%\System32\OpenSSH` (including the
-Sysnative view for 32-bit Python). You can verify those files with:
+On an **older Windows build**, the preferred long-term fix is a supported
+Windows upgrade. Alternatively, try the official
+[Win32-OpenSSH releases](https://github.com/PowerShell/Win32-OpenSSH/releases)
+client-only **64-bit MSI** (the project documents installation on older
+Windows). In an Administrator PowerShell window, from the folder containing
+the downloaded MSI, run `msiexec /i .\<downloaded-file>.msi ADDLOCAL=Client`
+using its **actual filename**. Do **not** install the Server component: this
+bot only needs outbound SSH and SCP. The bot checks `%ProgramFiles%\OpenSSH`
+for both clients even if the MSI does not update PATH. Before renting, verify:
+
+```powershell
+Test-Path "$env:ProgramFiles\OpenSSH\ssh.exe"
+Test-Path "$env:ProgramFiles\OpenSSH\scp.exe"
+& "$env:ProgramFiles\OpenSSH\ssh.exe" -V
+```
+
+Close and reopen the terminal and the bot, then check again. On newer Windows
+builds, if OpenSSH is installed but absent from PATH, the bot also looks under
+`%WINDIR%\System32\OpenSSH` (including Sysnative for 32-bit Python). Verify:
 
 ```powershell
 Test-Path "$env:WINDIR\System32\OpenSSH\ssh.exe"

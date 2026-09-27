@@ -70,7 +70,7 @@ class VastChallengeError(RuntimeError):
 
 
 def find_openssh_tool(name: str) -> str:
-    """Locate ssh/scp, including Windows' built-in OpenSSH when PATH omits it."""
+    """Locate ssh/scp, including standalone Windows OpenSSH when PATH omits it."""
     found = shutil.which(name)
     if found:
         return found
@@ -80,11 +80,28 @@ def find_openssh_tool(name: str) -> str:
             exe = Path(root) / folder / "OpenSSH" / f"{name}.exe"
             if exe.is_file():
                 return str(exe)
+        # The official standalone Win32-OpenSSH client-only MSI installs here.
+        # Useful on Windows 10 builds older than 1809, where Optional Features
+        # cannot install OpenSSH, and when the MSI did not update PATH.
+        program_files = os.environ.get("ProgramFiles")
+        if program_files:
+            exe = Path(program_files) / "OpenSSH" / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
+        version = getattr(sys, "getwindowsversion", None)
+        build = version().build if callable(version) else 0
+        if 0 < build < 17763:
+            raise RuntimeError(
+                f"OpenSSH {name}.exe is missing. Windows build {build} predates "
+                "the optional OpenSSH Client (requires Windows 10 build 17763/1809). "
+                "Upgrade Windows or install the standalone Win32-OpenSSH "
+                "client-only MSI from https://github.com/PowerShell/Win32-OpenSSH/releases. "
+                "Check BOTH ssh.exe and scp.exe before renting another Vast GPU."
+            )
         raise RuntimeError(
             f"OpenSSH {name}.exe is missing. Install Windows 'OpenSSH Client' "
-            "(Settings > System > Optional features > Add a feature), then "
-            "restart this app. In a new PowerShell window, check 'ssh -V' "
-            "and 'where.exe scp'. Do this before renting another Vast GPU."
+            "(Settings > Optional features > Add a feature), then restart "
+            "this app. Check BOTH ssh.exe and scp.exe before renting a Vast GPU."
         )
     raise RuntimeError(
         f"OpenSSH '{name}' is missing. Install the OpenSSH client "

@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -106,6 +107,40 @@ class VastOpenSSHTests(unittest.TestCase):
                      patch('bot.providers.image_vast.run_cmd'):
                     p._start_server('/workspace/image_server/server')
                 self.assertEqual(popen.call_args.args[0][0], str(directory / 'ssh.exe'))
+
+    def test_standalone_client_msi_is_found_without_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / 'program' / 'OpenSSH'
+            directory.mkdir(parents=True)
+            for name in ('ssh', 'scp'):
+                (directory / f'{name}.exe').touch()
+            with patch('bot.providers.image_vast.shutil.which', return_value=None), \
+                 patch('bot.providers.image_vast.sys.platform', 'win32'), \
+                 patch('bot.providers.image_vast.sys.getwindowsversion',
+                       create=True, return_value=SimpleNamespace(build=15063)), \
+                 patch.dict(os.environ, {'SystemRoot': str(Path(tmp) / 'win'),
+                                         'ProgramFiles': str(Path(tmp) / 'program')}):
+                p = VastProvider(Config({'image': {'vast': {}}}), None)
+                p._require_ssh_tools()
+                self.assertEqual(p._ssh_exe, str(directory / 'ssh.exe'))
+                self.assertEqual(p._scp_exe, str(directory / 'scp.exe'))
+
+    def test_old_windows_build_explains_why_optional_feature_cannot_install(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch('bot.providers.image_vast.shutil.which', return_value=None), \
+             patch('bot.providers.image_vast.sys.platform', 'win32'), \
+             patch('bot.providers.image_vast.sys.getwindowsversion',
+                   create=True, return_value=SimpleNamespace(build=15063)), \
+             patch.dict(os.environ, {'SystemRoot': str(Path(tmp) / 'win'),
+                                     'ProgramFiles': str(Path(tmp) / 'program')}), \
+             patch('requests.request') as requests:
+            p = VastProvider(Config({'image': {'vast': {}}}), None)
+            ready, message = p.healthcheck()
+            self.assertFalse(ready)
+            self.assertIn('15063', message)
+            self.assertIn('17763', message)
+            self.assertIn('standalone Win32-OpenSSH', message)
+            requests.assert_not_called()
 
     def test_missing_clients_report_windows_install_steps_without_api_calls(self):
         with tempfile.TemporaryDirectory() as tmp, \
