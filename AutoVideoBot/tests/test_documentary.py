@@ -8,7 +8,7 @@ from bot.config import Config
 from bot.paths import Project
 from bot.pipeline import Pipeline
 from bot.script import parse_script_file, generate_script
-from bot.shot_library import SHOTS, validate_scene
+from bot.shot_library import SHOTS, validate_scene, validate_sequence
 
 
 class FakeLLM:
@@ -36,6 +36,13 @@ class DocumentaryTests(unittest.TestCase):
                     {'shot':'outro','params':{'fake':1}},
                     {'shot':'outro','text_overlays':[{'t':-1,'text':'oops'}]}):
             with self.assertRaises(ValueError): validate_scene(bad,0)
+
+    def test_vector_pilot_shots_are_reusable_in_scene_sequence(self):
+        shots=['stellar_equilibrium','stellar_collapse','horizon_boundary']
+        self.assertEqual([SHOTS[s]['family'] for s in shots],['wide','close','diagram'])
+        scenes=[{'shot':s,'duration':8,'params':{}} for s in shots]
+        validate_sequence(scenes)
+        self.assertEqual([s['shot'] for s in scenes],shots)
 
     def test_director(self):
         output=generate_script(FakeLLM(),self.cfg(),topic='black holes',duration=16)
