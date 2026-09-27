@@ -36,24 +36,33 @@ THE THREE TRICKY PARTS, AND HOW THEY ARE SOLVED
 
 Endpoints (all under /api):
     GET  /api/state            everything the dashboard needs, one call
-    GET  /api/doctor           run the health check
     GET  /api/providers        every provider + which are active
+    POST /api/provider/check   health-check ONE provider (no build needed)
     GET  /api/voices           voices of the current TTS provider
     GET  /api/projects         list projects
     GET  /api/project/<slug>   one project in detail
     POST /api/run              start a build (script or topic)   -> job id
     POST /api/stage            run ONE stage of an existing project
+    POST /api/doctor           run the health check (as a job)
+    POST /api/test             the bundled 8-second self-test build
+    GET  /api/jobs             recent jobs
     GET  /api/job/<id>         a job's status + full log so far
     GET  /api/job/<id>/stream  live log stream (Server-Sent Events)
     POST /api/job/<id>/stop    stop a running job
-    GET  /api/jobs             recent jobs
+    GET  /api/config           the effective config values (?filter= to narrow)
     POST /api/config           write settings back to config.yaml
+    GET  /api/env              which keys are SET (never the values)
     POST /api/env              write API keys to .env
     POST /api/upload/music     add a music track
     POST /api/upload/asset     add a watermark / font / piper voice
     GET  /api/download/<slug>/<kind>   download the mp4 / srt / thumbnail / metadata
+    GET  /api/media/<slug>/<kind>      same, but inline (for <video> / <img>)
+    GET  /api/project/<slug>/scene-image/<sid>   one scene's picture
+    GET  /api/example-script   the bundled example script (plain text)
+    GET  /api/project/<slug>/text/<name>   read a project text file (script, srt, ...)
     POST /api/clean            delete intermediate files of a project
-    POST /api/open             open a project folder in the file manager
+    POST /api/delete-project   delete a whole project folder
+    POST /api/open-folder      open a project folder in the file manager
 """
 from __future__ import annotations
 
