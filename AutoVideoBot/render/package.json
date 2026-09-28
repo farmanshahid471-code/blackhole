@@ -1,0 +1,8 @@
+{
+  "name": "blackhole-documentary-renderer",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {"render:demo": "remotion render src/index.ts Scene demo.mp4 --props=demo.json", "render:pilot": "remotion render src/index.ts VectorPilot ../pilot/vector-pilot.mp4", "compositions": "remotion compositions src/index.ts", "typecheck": "tsc --noEmit"},
+  "dependencies": {"@remotion/cli": "^4.0.350", "remotion": "^4.0.350", "react": "^19.0.0", "react-dom": "^19.0.0"},
+  "devDependencies": {"typescript": "^5.8.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0"}
+}

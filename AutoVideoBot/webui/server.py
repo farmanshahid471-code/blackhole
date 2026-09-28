@@ -385,6 +385,8 @@ ENV_KEYS = [
     ("OPENAI_API_KEY", "OpenAI / Groq / OpenRouter key"),
     ("OPENAI_BASE_URL", "OpenAI-compatible address"),
     ("OPENAI_MODEL", "OpenAI-compatible model"),
+    ("REFERENCE_VISION_BASE_URL", "Reference video vision API address (optional)"),
+    ("REFERENCE_VISION_API_KEY", "Reference video vision API key (optional)"),
     ("OLLAMA_BASE_URL", "Ollama address"),
     ("OLLAMA_MODEL", "Ollama model"),
     ("ELEVENLABS_API_KEY", "ElevenLabs"),
@@ -633,6 +635,7 @@ def api_run(payload: dict[str, Any]) -> dict[str, Any]:
          "topic": "black holes",        # mode=topic
          "duration": 120,               # mode=topic
          "instructions": "",            # mode=topic extra direction
+         "reference_video": "https://www.youtube.com/watch?v=...", # optional, topic only
          "overrides": {...}, "quality": "draft|standard|high",
          "tts": "...", "image": "...", "llm": "...", "voice": "..."}
     """
@@ -640,6 +643,17 @@ def api_run(payload: dict[str, Any]) -> dict[str, Any]:
     if not name:
         raise HTTPException(400, "give the video a name")
     mode = str(payload.get("mode") or "script")
+    if mode not in ("script", "topic"):
+        raise HTTPException(400, "mode must be script or topic")
+    reference_video = str(payload.get("reference_video") or "").strip()
+    if reference_video:
+        if mode != "topic":
+            raise HTTPException(400, "YouTube references work only in topic mode")
+        from bot.reference import canonical_url
+        try:
+            reference_video, _ = canonical_url(reference_video)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
     overrides = _apply_overrides(payload)
 
     proj = _project(name)
@@ -659,7 +673,8 @@ def api_run(payload: dict[str, Any]) -> dict[str, Any]:
         proj.topic_file.write_text(
             f"topic: {topic}\n"
             f"duration: {payload.get('duration') or 120}\n"
-            f"instructions: {payload.get('instructions') or ''}\n",
+            f"instructions: {payload.get('instructions') or ''}\n"
+            f"reference_video: {reference_video}\n",
             encoding="utf-8")
 
     label = f"{'topic: ' + str(payload.get('topic')) if mode == 'topic' else 'your script'} -> {name}"
@@ -684,7 +699,8 @@ def api_run(payload: dict[str, Any]) -> dict[str, Any]:
             else:
                 p.stage_script(topic=str(payload.get("topic")),
                                duration=float(payload.get("duration") or 120),
-                               style=style, extra_instructions=instructions)
+                               style=style, extra_instructions=instructions,
+                               reference_video=reference_video)
             for stage in STAGE_NAMES[1:]:
                 if job.stop_requested.is_set():
                     job.log("stop requested - stopping here. Already-rendered work is "
