@@ -34,3 +34,12 @@ desktop.ini
 temp_audio/
 temp_images/
 output_videos/
+# Remotion build output and local browser/node downloads
+render/node_modules/
+render/*.mp4
+render/*.webm
+render/demo-frame*.png
+render/clips/
+render/props/
+render/status.json
+workspace/tmp/

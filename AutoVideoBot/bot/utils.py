@@ -422,7 +422,7 @@ def run_cmd(
     except FileNotFoundError as e:
         raise RuntimeError(
             f"Command not found: {cmd[0]}\n"
-            f"Install it, or set its full path in config.yaml -> system section."
+            "Install it and make sure it is available on PATH before rerunning."
         ) from e
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"Command timed out after {timeout}s: {printable[:200]}") from e
