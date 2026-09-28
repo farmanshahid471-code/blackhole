@@ -547,7 +547,7 @@ class FFmpegAssembly(AssemblyProvider):
     # 7. THE AUDIO MIX
     # ==================================================================
     def build_mix(self, *, voice: Path, music: Path | None, out_path: Path,
-                  duration: float) -> Path:
+                  duration: float, sfx_events: list[dict] | None = None) -> Path:
         """
         Narration + music -> the mastered soundtrack.
 
@@ -608,6 +608,30 @@ class FFmpegAssembly(AssemblyProvider):
                 "-i", str(norm)]
         if has_music:
             args += ["-i", str(music)]
+        if sfx_events:
+            # Add each effect to the existing ducked bed; the final two-pass
+            # documentary master below measures the *combined* soundtrack.
+            graph = graph.rsplit("[aout]", 1)[0] + "[bed]"
+            labels = ["[bed]"]
+            index = 2 if has_music else 1
+            for j, event in enumerate(sfx_events):
+                path = Path(event["path"])
+                if not path.is_file():
+                    raise FileNotFoundError(f"SFX missing: {path}")
+                args.extend(["-i", str(path)])
+                delay = max(0, int(round(float(event["at"])*1000)))
+                gain = max(-60.0, min(0.0, float(event["gain_db"])))
+                label = f"[fx{j}]"
+                graph += (f";[{index+j}:a]volume={gain:.2f}dB,"
+                          f"adelay={delay}:all=1{label}")
+                labels.append(label)
+            fade = max(0.0, to_float(master.get("fade_out_seconds"), 1.0))
+            final_filters = "alimiter=limit=0.95:level=false"
+            if fade:
+                final_filters += f",afade=t=out:st={max(0.0, duration-fade):.3f}:d={fade:.3f}"
+            graph += (";" + "".join(labels) +
+                      f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0,"
+                      f"{final_filters}[aout]")
         args += ["-filter_complex", graph, "-map", "[aout]",
                  "-t", f"{duration:.4f}",
                  "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(out_path)]
@@ -626,6 +650,16 @@ class FFmpegAssembly(AssemblyProvider):
                 "-c:a", "pcm_s16le", str(padded),
             ], capture=True, check=True, timeout=900, quiet=True)
             padded.replace(out_path)
+        # A separate, final pass measures the combined VO+music, not only the
+        # narrator. Existing image projects retain their old mastering.
+        if self.setting("visual.engine", "images") == "remotion" and master.get("loudnorm", True):
+            target = to_float(master.get("target_lufs"), -14.0)
+            mastered = out_path.with_name(out_path.stem + "_master.wav")
+            try:
+                self.normalize_track(out_path, mastered, target_lufs=target)
+                mastered.replace(out_path)
+            finally:
+                mastered.unlink(missing_ok=True)
         return out_path
 
     def normalize_track(self, src: Path, out_path: Path,

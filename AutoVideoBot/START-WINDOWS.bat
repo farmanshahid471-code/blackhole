@@ -22,6 +22,17 @@ set "VENV=.venv"
 set "VPY=%VENV%\Scripts\python.exe"
 set "PORT=8765"
 
+REM --- locate portable OpenSSH on the SAME drive as this bot (e.g. F:) ---
+REM Windows 10 before 1809 cannot install the optional OpenSSH Client.
+REM The official Win32-OpenSSH ZIP can stay at F:\Tools\OpenSSH-Win64.
+REM Set AVB_OPENSSH_DIR to override this location without editing this file.
+set "PORTABLE_SSH=%AVB_OPENSSH_DIR%"
+if not defined PORTABLE_SSH set "PORTABLE_SSH=%~d0\Tools\OpenSSH-Win64"
+if exist "%PORTABLE_SSH%\ssh.exe" if exist "%PORTABLE_SSH%\scp.exe" (
+  set "PATH=%PORTABLE_SSH%;%PATH%"
+  echo    Using portable OpenSSH from %PORTABLE_SSH%
+)
+
 REM --- every download stays inside THIS folder (nothing on C:) ---
 set "CACHE_DIR=%~dp0.cache"
 if not exist "%CACHE_DIR%\tmp" mkdir "%CACHE_DIR%\tmp"
