@@ -40,10 +40,10 @@ Two ways to use it (config.yaml -> image.vast.mode):
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -56,14 +56,73 @@ from ..utils import debug, die, info, run_cmd, which, warn
 from . import _wire
 from .base import ImageProvider
 
-# Vast has moved hosts over time (console.vast.ai -> cloud.vast.ai). Try the
-# current one first, fall back to the old one. NEVER follow cross-host
-# redirects with requests: it silently drops the Authorization header and the
-# API then answers 401 even when the key is perfect.
+# Vast's published API examples use console.vast.ai. Try it FIRST: the
+# interactive cloud.vast.ai frontend can return a browser challenge to API
+# clients. Do not follow cross-host redirects with Authorization attached.
 API_BASES = (
-    "https://cloud.vast.ai/api/v0",
     "https://console.vast.ai/api/v0",
+    "https://cloud.vast.ai/api/v0",
 )
+
+
+class VastChallengeError(RuntimeError):
+    """A Vast edge challenge is not evidence that the API key is invalid."""
+
+
+def find_openssh_tool(name: str) -> str:
+    """Locate ssh/scp, including standalone Windows OpenSSH when PATH omits it."""
+    found = shutil.which(name)
+    if found:
+        return found
+    if sys.platform == "win32":
+        root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or "C:/Windows"
+        for folder in ("System32", "Sysnative"):
+            exe = Path(root) / folder / "OpenSSH" / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
+        # The official standalone Win32-OpenSSH client-only MSI installs here.
+        # Useful on Windows 10 builds older than 1809, where Optional Features
+        # cannot install OpenSSH, and when the MSI did not update PATH.
+        program_files = os.environ.get("ProgramFiles")
+        if program_files:
+            exe = Path(program_files) / "OpenSSH" / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
+        # Standalone Win32-OpenSSH ZIP needs no MSI and can live on the same
+        # drive as AutoVideoBot, e.g. F:\Tools\OpenSSH-Win64. The explicit
+        # directory also works when the ZIP is stored elsewhere. Do this
+        # before any Vast API search or billable instance creation.
+        portable = os.environ.get("AVB_OPENSSH_DIR")
+        locations = ([Path(portable)] if portable else [])
+        if ROOT.drive:
+            locations.append(Path(ROOT.anchor) / "Tools" / "OpenSSH-Win64")
+        for directory in locations:
+            exe = directory / f"{name}.exe"
+            if exe.is_file():
+                return str(exe)
+        version = getattr(sys, "getwindowsversion", None)
+        build = version().build if callable(version) else 0
+        if 0 < build < 17763:
+            raise RuntimeError(
+                f"OpenSSH {name}.exe is missing. Windows build {build} predates "
+                "the optional OpenSSH Client (requires Windows 10 build 17763/1809). "
+                "Use the portable Win32-OpenSSH ZIP from "
+                "https://github.com/PowerShell/Win32-OpenSSH/releases, "
+                "extract it to the bot drive's Tools/OpenSSH-Win64 folder "
+                "(e.g. F:/Tools/OpenSSH-Win64), or set AVB_OPENSSH_DIR to its "
+                "folder. Check BOTH ssh.exe and scp.exe before renting another Vast GPU."
+            )
+        raise RuntimeError(
+            f"OpenSSH {name}.exe is missing. Install Windows 'OpenSSH Client' "
+            "(Settings > Optional features > Add a feature), then restart "
+            "this app. Check BOTH ssh.exe and scp.exe before renting a Vast GPU."
+        )
+    raise RuntimeError(
+        f"OpenSSH '{name}' is missing. Install the OpenSSH client "
+        "(Ubuntu/Debian: sudo apt install openssh-client; macOS: use the "
+        "built-in tools), then check 'ssh -V' and 'command -v scp' before "
+        "renting another Vast GPU."
+    )
 
 
 def _fmt_metric(offer: dict[str, Any], *keys: str) -> str:
@@ -195,6 +254,9 @@ class VastProvider(ImageProvider):
 
     supports_batch = True
     supports_parallel = False
+    # A failed rental/search is a configuration/API error, not an image that
+    # can be repaired by retrying the identical query once per scene.
+    batch_error_fatal = True
 
     def __init__(self, cfg, project=None):
         super().__init__(cfg, project)
@@ -204,6 +266,13 @@ class VastProvider(ImageProvider):
         self._local_port: int = 0
         self._owns_instance = False
         self._api_base: str | None = None   # which API host answered last time
+        self._ssh_exe: str | None = None
+        self._scp_exe: str | None = None
+
+    def _require_ssh_tools(self) -> None:
+        """Fail before renting: a running GPU bills even without local SSH."""
+        self._ssh_exe = find_openssh_tool("ssh")
+        self._scp_exe = find_openssh_tool("scp")
 
     # ==================================================================
     # API plumbing
@@ -225,8 +294,12 @@ class VastProvider(ImageProvider):
         import requests
         headers = {"Authorization": f"Bearer {self._key()}", "Accept": "application/json"}
         short = path.split("?")[0]
+        # POST /bundles is a read-only search. Do not replay instance-creating
+        # PUTs (or DELETEs) after an ambiguous timeout or server error.
+        safe_replay = method.upper() == "GET" or (method.upper() == "POST" and short == "/bundles/")
         bases = (self._api_base,) if self._api_base else API_BASES
         last: RuntimeError | None = None
+        challenge_error: VastChallengeError | None = None
         for base in bases:
             url = f"{base}{path}"
             debug(f"vast: {method} {url}")
@@ -239,15 +312,46 @@ class VastProvider(ImageProvider):
             except Exception as e:
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> network problem: {str(e)[:160]}")
+                if not safe_replay:
+                    if method.upper() == "PUT" and short.startswith("/asks/"):
+                        last = RuntimeError(f"{last}. Creation may have succeeded; check "
+                                            "https://cloud.vast.ai/instances/ before retrying.")
+                    raise last from e
                 continue
             if r.status_code in (301, 302, 303, 307, 308):
                 # a redirect to another host would strip our Authorization
                 # header - just talk to the other host directly instead
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> HTTP {r.status_code} "
-                    f"redirect at {base} - trying the other API host")
+                    f"redirect at {base} - refusing automatic redirects")
+                if not safe_replay:
+                    raise last
                 continue
             if r.status_code >= 400:
+                # A 403 with code=challenge comes from Vast's edge protection,
+                # NOT from its API-key verifier. Never suggest rotating a key
+                # or programmatically completing a browser challenge for it.
+                if r.status_code == 403:
+                    try:
+                        error = r.json().get("error", {})
+                    except (ValueError, AttributeError):
+                        error = {}
+                    if isinstance(error, dict) and error.get("code") == "challenge":
+                        challenge_id = str(error.get("id") or "")[:100]
+                        last = VastChallengeError(
+                            f"Vast.ai API challenge at {base}; this does not prove your key is wrong. "
+                            "Try Vast's documented console.vast.ai API endpoint from the same "
+                            "machine/network; if it is also challenged, complete any account "
+                            "verification in your own browser or contact Vast.ai support with "
+                            f"challenge ID {challenge_id or '(not provided)'}. "
+                            "Do not share your API key or use CAPTCHA-bypass services."
+                        )
+                        challenge_error = last
+                        # One other first-party endpoint can be tried for a
+                        # read-only request, but never replay a billed mutation.
+                        if safe_replay:
+                            continue
+                        raise last
                 body_txt = (r.text or "").strip().replace("\n", " ")[:200]
                 hint = ""
                 if r.status_code in (401, 403):
@@ -259,26 +363,35 @@ class VastProvider(ImageProvider):
                             "https://cloud.vast.ai/billing/")
                 last = RuntimeError(
                     f"Vast.ai API {method} {short} -> HTTP {r.status_code}: {body_txt}{hint}")
-                if r.status_code not in (404, 410, 500, 502, 503):
-                    raise last          # auth/billing errors are the same everywhere
+                if not safe_replay or r.status_code not in (404, 410, 500, 502, 503):
+                    # A challenge from the documented endpoint must not be
+                    # misreported as a bad key because the fallback disagrees.
+                    raise challenge_error or last
                 continue
             self._api_base = base       # remember the host that works
             try:
                 return r.json()
             except Exception:
                 return {"raw": r.text}
-        raise last or RuntimeError(f"Vast.ai API {method} {short} -> no API host reachable")
+        raise challenge_error or last or RuntimeError(
+            f"Vast.ai API {method} {short} -> no API host reachable")
 
     # ==================================================================
     # healthcheck
     # ==================================================================
     def healthcheck(self) -> tuple[bool, str]:
         try:
+            self._require_ssh_tools()
+        except RuntimeError as e:
+            return False, str(e)
+        try:
             key = self._key()
         except SystemExit:
             return False, "VAST_API_KEY is empty in .env"
         try:
             data = self._api("GET", "/users/current/", timeout=25)
+        except VastChallengeError as e:
+            return False, str(e)
         except Exception as e:
             return False, f"could not reach Vast.ai ({str(e)[:160]})"
         if isinstance(data, dict) and data.get("error"):
@@ -310,18 +423,26 @@ class VastProvider(ImageProvider):
 
         query = {
             "gpu_name": {"eq": gpu},
-            "gpu_ram": {"gte": min_vram * 1024},        # Vast reports VRAM in MB
+            "gpu_ram": {"gte": int(min_vram * 1024)},  # Vast REST API uses MB
             "dph_total": {"lte": max_price},
             "disk_space": {"gte": disk},
+            "direct_port_count": {"gte": int(s.get("min_direct_ports", 1))},
             "num_gpus": {"eq": 1},
             "rentable": {"eq": True},
+            "rented": {"eq": False},
             "verified": {"eq": True},
             "order": [["dph_total", "asc"]],
             "type": "on-demand",
+            "limit": 100,
         }
         info(f"  searching Vast.ai for {gpu} (>= {min_vram:.0f} GB VRAM, "
              f"<= ${max_price:.2f}/h) ...")
-        data = self._api("GET", "/bundles/?" + json.dumps({"q": query}), timeout=90)
+        # Vast's documented search is POST /bundles/ with a *flat JSON body*.
+        # The old GET /bundles/?{"q": ...} sent an invalid query string and
+        # reliably returned HTTP 400 before renting any instance.
+        data = self._api("POST", "/bundles/", query, timeout=90)
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(f"Vast.ai offer search failed: {str(data.get('msg') or data['error'])[:200]}")
         offers = data.get("offers") if isinstance(data, dict) else None
         if not offers:
             raise RuntimeError(
@@ -354,16 +475,13 @@ class VastProvider(ImageProvider):
         return best
 
     def _create_instance(self, offer: dict[str, Any]) -> dict[str, Any]:
+        self._require_ssh_tools()  # protect direct callers that skipped healthcheck
         s = self.setting("image.vast.search", {}) or {}
-        v = self.setting("image.vast", {}) or {}
         body = {
-            "bundle_id": int(offer["id"]),
             "disk": float(s.get("disk_gb", 32)),
             "image": str(s.get("image", "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")),
-            "runtype": "ssh",
+            "runtype": "ssh_direct",
             "label": "autovideobot",
-            # The server needs a port reachable from your PC; Vast maps it for us.
-            "env": {"-p 7860:7860": "1"},
         }
         region = str(s.get("region") or "")
         if region:
@@ -417,20 +535,62 @@ class VastProvider(ImageProvider):
             f"  Try again (another machine) or raise image.vast.boot_timeout."
         )
 
+    def _probe_ssh(self) -> None:
+        """Require an authenticated SSH handshake, not merely API 'running'.
+
+        Vast's SSH proxy/forwarded port can appear after the VM reports
+        running. Wait briefly for transient connection refusals; do not retry
+        bad keys or let a billed instance spin for the full model boot timeout.
+        """
+        assert self._ssh
+        deadline = time.monotonic() + max(1, float(self.setting("image.vast.ssh_ready_timeout", 60)))
+        target = f"{self._ssh['user']}@{self._ssh['host']}"
+        info("  checking SSH access before uploading the server ...")
+        while True:
+            try:
+                run_cmd(self._ssh_base() + ["-o", "BatchMode=yes", target, "true"],
+                        capture=True, check=True, timeout=30, quiet=True)
+                info("  SSH authenticated; ready to upload")
+                return
+            except RuntimeError as exc:
+                message = str(exc).lower()
+                transient = any(x in message for x in (
+                    "connection refused", "connection timed out", "connection reset",
+                    "connection closed", "banner exchange", "operation timed out"))
+                if not transient:
+                    raise RuntimeError(f"Vast SSH authentication/setup failed: {exc}") from exc
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise RuntimeError(
+                        "Vast says the machine is running, but its SSH port still "
+                        "refuses connections. The bot will destroy a rented instance. "
+                        "Check your Vast dashboard; do not pay for another retry "
+                        "until the host/SSH proxy is reachable from this PC. "
+                        f"Last error: {str(exc)[-280:]}") from exc
+                info(f"  SSH proxy not ready yet; waiting {min(8, left):.0f}s ...")
+                time.sleep(min(8, left))
+
     # ==================================================================
     # 3. get the code onto the machine
     # ==================================================================
+    @staticmethod
+    def _null_hosts_file() -> str:
+        # Windows OpenSSH uses the NUL device, not Unix's /dev/null.
+        return "NUL" if sys.platform == "win32" else "/dev/null"
+
     def _scp_base(self) -> list[str]:
         assert self._ssh
         return [
-            "scp", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._scp_exe or find_openssh_tool("scp"), "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-P", str(self._ssh["port"]),
         ]
 
     def _ssh_base(self) -> list[str]:
         assert self._ssh
         return [
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._ssh_exe or find_openssh_tool("ssh"), "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-o", "ConnectTimeout=20", "-p", str(self._ssh["port"]),
         ]
 
@@ -444,9 +604,13 @@ class VastProvider(ImageProvider):
         run_cmd(self._ssh_base() + [f"{self._ssh['user']}@{self._ssh['host']}",
                                     f"mkdir -p {remote}"],
                 capture=True, check=True, timeout=120, quiet=True)
-        run_cmd(self._scp_base() + ["-r", str(local), f"{self._ssh['user']}@{self._ssh['host']}:{remote}"],
-                capture=True, check=True, timeout=900, quiet=True)
-        return remote
+        # Run scp from the directory containing the source: some Windows/Git
+        # OpenSSH builds parse the colon in F:\path as a remote host separator.
+        run_cmd(self._scp_base() + ["-r", local.name, f"{self._ssh['user']}@{self._ssh['host']}:{remote}"],
+                cwd=local.parent, capture=True, check=True, timeout=900, quiet=True)
+        # scp -r DIRECTORY REMOTE_EXISTING_DIRECTORY creates a nested folder.
+        # Start the server in that nested folder, not its parent.
+        return f"{remote}/{local.name}"
 
     def _start_server(self, remote_dir: str) -> int:
         """Start the server on the instance and open a local tunnel to it."""
@@ -465,8 +629,9 @@ class VastProvider(ImageProvider):
         self._local_port = self._free_port()
         info(f"  opening the tunnel  localhost:{self._local_port} -> gpu:{port} ...")
         ssh_cmd = [
-            "ssh", "-N",
-            "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            self._ssh_exe or find_openssh_tool("ssh"), "-N",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self._null_hosts_file()}",
             "-o", "ServerAliveInterval=15", "-o", "ExitOnForwardFailure=yes",
             "-p", str(self._ssh["port"]),
             "-L", f"{self._local_port}:127.0.0.1:{port}",
@@ -509,6 +674,7 @@ class VastProvider(ImageProvider):
         """Boot everything if needed and return the base URL to talk to."""
         if self._local_port:
             return f"http://127.0.0.1:{self._local_port}"
+        self._require_ssh_tools()  # no search/rental without both local clients
 
         mode = str(self.setting("image.vast.mode", "search")).lower()
         if mode == "existing":
@@ -532,6 +698,7 @@ class VastProvider(ImageProvider):
             self._create_instance(offer)
 
         self._ssh = self._wait_for_ssh()
+        self._probe_ssh()
         remote = self._upload_server()
         port = self._start_server(remote)
         self._wait_for_server(port)

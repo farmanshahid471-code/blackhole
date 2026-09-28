@@ -11,9 +11,9 @@ WHY IT IS THE DEFAULT
   * $0 and no sign-up: it is the same voice engine your Edge browser uses
   * documentary-quality neural voices (en-US-GuyNeural is the classic deep
     narrator voice)
-  * it reports WHEN EVERY WORD IS SPOKEN. That single feature is what makes
-    the subtitles line up perfectly with the audio, which is the difference
-    between "AI slop" and "looks professionally edited".
+  * it can report word-boundary events, which provide a better starting point
+    for subtitle timing than evenly spreading words across a scene. Check the
+    rendered result: missing events and audio processing can affect sync.
 
 REQUIREMENTS
 ------------
@@ -65,7 +65,7 @@ FALLBACK_VOICES = [
           doc="Free Microsoft neural voices with word-level timestamps - the "
               "default. No key, no account, no limit.")
 class EdgeTTSProvider(TTSProvider):
-    """Free neural speech, with word timings for perfect captions."""
+    """Free neural speech with word-boundary events when the service supplies them."""
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -203,7 +203,7 @@ class EdgeTTSProvider(TTSProvider):
 
         if not words:
             warn("  no word timings came back for this scene - captions will be "
-                 "spread evenly across it instead of word-perfect")
+                 "spread evenly across the scene (not word-accurate)")
 
         return {
             "path": out_path,

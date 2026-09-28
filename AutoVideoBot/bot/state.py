@@ -38,6 +38,7 @@ STAGES = [
     "mix",          # voice + music + mastering
     "assembly",     # final muxed mp4
     "extras",       # thumbnail + youtube metadata
+    "qa",           # optional documentary post-export measurements
 ]
 
 
