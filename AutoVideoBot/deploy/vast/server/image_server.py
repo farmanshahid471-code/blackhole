@@ -266,5 +266,5 @@ def generate(batch: JobBatch):
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"  listening on 0.0.0.0:{PORT}   (health: /health)")
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+    print(f"  listening on 127.0.0.1:{PORT} via private SSH tunnel (health: /health)")
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

@@ -1,0 +1,27 @@
+{
+  "title": "The Gravity Trap",
+  "voice": "en-US-ChristopherNeural",
+  "music": "deep_space_drone.mp3",
+  "scenes": [
+    {
+      "narration": "Somewhere in this galaxy, a clock is running slower than yours.",
+      "shot": "accretion_disk_orbit",
+      "params": {"camera_orbit_speed": 0.15, "disk_tilt_deg": 18, "hole_spin": 0.6},
+      "text_overlays": [{"t": 1.2, "text": "THE GRAVITY TRAP", "style": "title_card"}],
+      "duration_hint_s": 6
+    },
+    {
+      "narration": "A black hole is not a hole at all. It's matter crushed past the point of return.",
+      "shot": "core_cross_section_diagram",
+      "params": {"highlight": "singularity"},
+      "duration_hint_s": 7
+    },
+    {
+      "narration": "Cross the event horizon and forward stops being a direction in space.",
+      "shot": "event_horizon_flythrough",
+      "params": {"camera_speed": 0.4, "lens_strength": 1.8},
+      "sfx": [{"kind": "rumble", "t": 3.2}],
+      "duration_hint_s": 6
+    }
+  ]
+}

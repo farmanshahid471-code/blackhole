@@ -30,7 +30,8 @@ At $0.35/h that is **about $0.02-0.08 per video**.
    * Linux/macOS/WSL: `curl -fsSL https://vast.ai/install.sh | bash`
    * Windows: `pip install vastai`
    * then `vastai set api-key YOUR_KEY` and `vastai search offers --limit 3`
-4. Make sure `ssh -V` works (Windows 10/11 and macOS have OpenSSH built in).
+4. Make sure both `ssh -V` and `scp` are available **before renting**;
+   Windows' OpenSSH Client is an optional feature (see Windows section below).
 5. `config.yaml`:
    ```yaml
    image:
@@ -101,8 +102,8 @@ a model runs at all is VRAM; what decides how fast is a distant second. So:
 image.vast.mode: existing
 image.vast.instance_id: 12345678
 ```
-The bot starts it if stopped, uses it, and only *stops* (never destroys) it
-at the end.
+The instance must already be **running**. The bot reuses it and leaves it
+running; stop or destroy it manually when you are done to avoid ongoing costs.
 
 ## What runs on the GPU
 
@@ -114,11 +115,20 @@ at the end.
 * `start_server.sh` - idempotent installer + launcher + health waiter.
 
 Because images are generated in ONE batch request, the model loads once per
-video, not once per image.
+video, not once per image. The server binds to loopback on the rental and is
+accessed only through an SSH tunnel (no public image-server port).
 
 ## Money safety (read once, sleep forever)
 
 * `destroy_after_use: true` is the default and the important line.
+* A Vast API/search failure stops stage 4 rather than repeating the failed
+  request for each scene or quietly rendering placeholder cards. The successful
+  voice/timing artifacts remain cached: rerun the same project after fixing
+  the problem. An instance-creation network timeout may have succeeded despite
+  no response: check your Vast dashboard for running rentals **before** retrying.
+* Offer search uses `POST /api/v0/bundles/` with flat JSON filters, and the
+  chosen offer ID goes in `PUT /asks/{offer_id}/`. Only the SSH direct port is
+  needed; the image-server port is not exposed publicly.
 * If the bot crashes mid-run, the instance keeps billing. Recover:
   ```bash
   vastai show instances
@@ -157,3 +167,99 @@ once) and **$0.02-0.04 for every video after that** on the same kept machine.
 Compare with Replicate at ~$0.003 per image, i.e. ~$0.09 per 30-image video
 with zero operations: if you only make occasional videos, Replicate is
 simpler; if you make a batch, renting wins.
+
+## API returns `403` with `code: challenge`
+
+This is a Vast.ai edge/security challenge, **not proof that your API key is
+wrong**. The bot now tries Vast's documented `console.vast.ai` API host first;
+for read-only checks and offer searches only, it may try the other Vast
+first-party host once.
+It does not replay create/delete operations or try to solve CAPTCHAs. If both
+hosts challenge you, sign in to Vast.ai in your own browser and complete any
+account verification, then retry from the **same machine/network**. If the
+challenge persists, contact Vast support with its challenge ID. Never send
+support, this bot, or anyone in chat your raw API key. The official Vast CLI
+(`vastai show user`) can independently confirm whether that machine/network
+can reach the API. See https://docs.vast.ai/api-reference/authentication for
+the documented API host and authentication format.
+
+## Windows: check OpenSSH **before** renting
+
+The Vast CLI (`pip install vastai`) does **not** install the local `ssh` and
+`scp` clients that upload the image server and open its private tunnel. On
+Windows, open PowerShell and check:
+
+```powershell
+ssh -V
+Get-Command scp
+```
+
+**Check your Windows version first:** Windows 10 build **17763 (1809)** or
+newer supports the built-in OpenSSH *Optional Feature*. On an older build such
+as **15063 (1703)**, `Add-WindowsCapability`/DISM cannot install this feature;
+`Online: True` is not proof that it was installed. Verify `State: Installed`
+with `Get-WindowsCapability -Online -Name 'OpenSSH.Client*'` before continuing.
+
+On a supported build, install **OpenSSH Client** (not OpenSSH Server) in
+**Settings > Optional features > Add a feature**, or run the following in an
+Administrator PowerShell window:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+On an **older Windows build**, the preferred long-term fix is a supported
+Windows upgrade. The portable **Win32-OpenSSH ZIP** from the official
+[releases](https://github.com/PowerShell/Win32-OpenSSH/releases) also works
+without installing anything on C:. Extract it to `F:\Tools\OpenSSH-Win64`
+when the bot is on F:. The updated `START-WINDOWS.bat` automatically prepends
+`<bot drive>:\Tools\OpenSSH-Win64` to its own PATH when **both** clients
+exist, so double-clicking the batch file works; a temporary `$env:Path`
+changed in PowerShell does **not** carry over to a separately double-clicked
+app. The Vast provider also checks this same-drive folder even when starting
+from another launcher. To use a different folder, set `AVB_OPENSSH_DIR` to its
+full path before launching, or add the folder to your user PATH.
+
+```powershell
+Test-Path 'F:\Tools\OpenSSH-Win64\ssh.exe'
+Test-Path 'F:\Tools\OpenSSH-Win64\scp.exe'
+& 'F:\Tools\OpenSSH-Win64\ssh.exe' -V
+```
+
+The **client-only MSI** is an alternative but normally installs under
+`C:\Program Files\OpenSSH`, regardless of where the MSI file was downloaded.
+That may not suit a machine with little free C: space. Do not install the
+Server component: the bot only needs outbound SSH and SCP.
+
+Close and reopen the terminal and the bot, then check again. On newer Windows
+builds, if OpenSSH is installed but absent from PATH, the bot also looks under
+`%WINDIR%\System32\OpenSSH` (including Sysnative for 32-bit Python). Verify:
+
+```powershell
+Test-Path "$env:WINDIR\System32\OpenSSH\ssh.exe"
+Test-Path "$env:WINDIR\System32\OpenSSH\scp.exe"
+```
+
+Before a paid image batch, finish stage 3 (`python main.py voice <project>` then
+`python main.py timing <project>`). If a scene's Edge TTS speech cannot fit its
+LLM timestamp without exceeding `timing.max_speedup`, the updated timing stage
+holds that scene longer rather than trimming the narrator's last words. This
+may make a requested ten-minute film several seconds longer. Stage 4 rejects
+older saved timing reports with overlong, capped narration before renting a GPU;
+re-run stage 3 with the updated `bot/pipeline.py` first. Shorten or edit the
+script yourself if an exact final runtime is essential.
+
+The bot now checks **both** executables before searching/renting, so a missing
+client will not cost a booted GPU. This check does not prove that the network
+can reach the chosen host or that your SSH key is registered with Vast. A
+newly created instance can report `running` before its SSH proxy accepts
+connections; the bot now checks an authenticated SSH handshake, waiting up to
+`image.vast.ssh_ready_timeout` (default 60 additional seconds) for transient
+refusals before uploading the server. If it never connects, the bot destroys
+an instance it rented and stops rather than immediately renting another.
+Vast still bills for the time the instance existed; verify its status at the
+Vast dashboard and don't retry until you've checked network access or changed
+hosts. A live connection cannot be guaranteed by an offline preflight.
+When using `mode: existing`, you can test connectivity without starting a
+**new** rental. If a run fails,
+check the Vast dashboard for instances still billing before trying again.

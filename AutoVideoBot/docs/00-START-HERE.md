@@ -29,6 +29,11 @@ redo any single decision without redoing the rest.
 Everything in this repository exists to produce those five things and join
 them. Nothing else. When you feel lost, come back to this list.
 
+For a **topic-written** video, you may optionally supply a YouTube inspiration
+link in the Create screen. The bot studies captions and sampled frames before
+writing an **original** script; a separate vision model is needed for visual
+meaning. See [Reference video](17-REFERENCE-VIDEO.md) for setup and limits.
+
 ### 1.3 The architecture in one picture
 
 ```

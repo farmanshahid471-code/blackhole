@@ -1,0 +1,35 @@
+{
+  "title": "How a Star Can Leave a Black Hole — 60 Second Test",
+  "scenes": [
+    {
+      "start": 0, "end": 10,
+      "shot": "stellar_equilibrium", "params": {},
+      "narration": "Deep inside a massive star, gravity pulls everything inward. Energy from fusion pushes outward, helping the star hold its shape."
+    },
+    {
+      "start": 10, "end": 20,
+      "shot": "stellar_collapse", "params": {},
+      "narration": "When the core can no longer make enough outward pressure, gravity takes over. The core contracts rapidly, while outer layers react."
+    },
+    {
+      "start": 20, "end": 30,
+      "shot": "horizon_boundary", "params": {},
+      "narration": "Some massive stars leave black holes behind. The event horizon is a boundary: once light crosses inward, it cannot escape."
+    },
+    {
+      "start": 30, "end": 40,
+      "shot": "starfield_warp", "params": {"lens_strength": 1.5},
+      "narration": "Outside that boundary, light travels through curved spacetime. The path can bend visibly, changing what distant observers see behind the black hole."
+    },
+    {
+      "start": 40, "end": 50,
+      "shot": "spaghettification", "params": {"stretch": 1.4},
+      "narration": "Gravity pulls more strongly at closer distances. Across an object, that difference creates tidal forces, which can stretch it toward the black hole."
+    },
+    {
+      "start": 50, "end": 60,
+      "shot": "mass_scale_compare", "params": {},
+      "narration": "Black holes vary enormously in mass. Some are stellar remnants; the largest known examples contain millions or billions of Suns."
+    }
+  ]
+}

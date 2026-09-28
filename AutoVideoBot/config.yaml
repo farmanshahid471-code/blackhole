@@ -48,6 +48,46 @@ video:
                            # h265 = smaller files, slower encode, some players complain
 
 
+# Choose "remotion" for the shot-library documentary pipeline (requires Node/npm ci
+# in render/). Default preserves existing image/Ken Burns projects.
+visual:
+  engine: "images"         # images | remotion
+  browser_executable: ""  # local: path to Chrome/Chromium if auto-download is unavailable
+  render_backend: "local" # local | vast (Vast costs money; only opt in deliberately)
+  local_parallel_scenes: 1 # 1-4; each worker launches Chromium
+  local_gl: ""           # optional: angle | angle-egl | egl | swangle | vulkan
+  vast:
+    api_key_env: "VAST_API_KEY"
+    mode: "existing"      # existing = reuse without destroying | search = rent and always destroy
+    instance_id: null
+    ssh_key_path: ""       # optional absolute private-key path; e.g. F:/Keys/avb-vast-ed25519
+    parallel_scenes: 2     # 1-4 Chromium processes, limited by GPU RAM
+    gl: "angle-egl"       # prefer hardware EGL on NVIDIA machines
+    require_hardware_webgl: true # abort and destroy rented box if browser uses software GL
+    render_timeout: 7200
+    boot_timeout: 600
+    search:
+      gpu_type: "RTX 4090"
+      min_vram_gb: 16
+      max_price_per_hour: 0.50
+      disk_gb: 35
+      min_direct_ports: 1
+      image: "node:22-bookworm" # apt installs system Chromium on first use
+      min_reliability: 0.95
+      min_inet_down_mbps: 100
+      min_cuda: 12.0
+
+
+# Optional topic-mode YouTube reference. Frame understanding requires a separate
+# vision-capable OpenAI-compatible chat API; without it, only captions and
+# measurable palette/scene changes guide the script. Do not copy footage.
+reference:
+  vision:
+    model: ""                      # e.g. gpt-4o-mini (blank = no vision API calls)
+    base_url_env: "REFERENCE_VISION_BASE_URL" # .env cloud HTTPS or local Ollama /v1
+    api_key_env: "REFERENCE_VISION_API_KEY"
+
+
 # ============================================================================
 # 2. LLM  -  writes the script, the image prompts, titles and description
 # ============================================================================
@@ -168,6 +208,7 @@ image:
       min_vram_gb: 24
       max_price_per_hour: 0.45       # raise to 0.60 if no host matches in your region
       disk_gb: 45                    # SDXL needs ~15 GB, FLUX ~30 GB + torch wheels
+      min_direct_ports: 1           # SSH direct only; image server uses a private SSH tunnel
       image: "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
       region: ""                     # "" = anywhere. e.g. "us-west"
       # --- host quality gates (the cheap machine is often cheap for a reason) ---
@@ -179,6 +220,7 @@ image:
     server_port: 7860
     server_start_cmd: "bash start_server.sh"
     boot_timeout: 600                # seconds to wait for the machine to wake up
+    ssh_ready_timeout: 60           # extra seconds for Vast's SSH proxy after API says running
     destroy_after_use: true          # true = stop paying the moment rendering is done
     keep_alive_ping: 30              # seconds between "are you still there?" pings
 
@@ -217,7 +259,7 @@ image:
 #   OPTIONS:  edge | voicestudio | elevenlabs | openai_tts | piper | espeak
 #
 #     edge       -> FREE Microsoft Azure neural voices. No key. No limit.
-#                   Also gives WORD-LEVEL TIMESTAMPS -> perfect subtitles.
+#                   Can provide word-boundary events; review final subtitle sync.
 #     voicestudio-> https://github.com/debpalash/VoiceStudio  (self hosted API)
 #     elevenlabs -> Best quality, voice cloning, paid.
 #     openai_tts -> Simple, good quality, paid.
@@ -393,6 +435,11 @@ audio:
     duck_attack_ms: 25
     duck_release_ms: 450
 
+  sfx:
+    enabled: true           # documentary mode: synthesized transition + impact cues
+    whoosh_gain_db: -20.0  # both are mixed BELOW narration
+    rumble_gain_db: -22.0
+
   voice:
     normalize: true        # makes every scene the same loudness
     target_loudness_lufs: -16.0   # -16 = YouTube standard, -14 = louder
@@ -404,8 +451,13 @@ audio:
   master:
     limiter: true
     loudnorm: true
+    target_lufs: -14.0      # documentary mode: two-pass normalize the final VO+music mix
     fade_out_seconds: 1.0
 
+
+qa:
+  enabled: true            # documentary mode: output/qa.json loudness, sync and silence check
+  silence_min_seconds: 2.5
 
 # ============================================================================
 # 9. SUBTITLES / CAPTIONS
@@ -415,6 +467,7 @@ subtitles:
   burn_in: true            # true = burned into the video (always visible)
                            # false = only a .srt file is written next to the mp4
   source: "word_boundaries" # word_boundaries (needs edge TTS) | scene_split | none
+  karaoke: null            # null = auto (on for Remotion, off for image videos)
 
   words_per_line: 4        # for Shorts-style word-by-word captions
   max_chars_per_line: 42   # for normal documentary subtitles

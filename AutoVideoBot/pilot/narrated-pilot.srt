@@ -1,0 +1,95 @@
+1
+00:00:00,600 --> 00:00:02,660
+Inside a massive star,
+
+2
+00:00:03,070 --> 00:00:04,960
+gravity pulls every layer
+
+3
+00:00:04,970 --> 00:00:05,590
+inward.
+
+4
+00:00:05,990 --> 00:00:07,740
+Heat from fusion pushes
+
+5
+00:00:07,750 --> 00:00:08,330
+outward.
+
+6
+00:00:08,800 --> 00:00:10,130
+For millions of years,
+
+7
+00:00:10,450 --> 00:00:12,460
+these opposing forces hold
+
+8
+00:00:12,470 --> 00:00:13,970
+the star in balance.
+
+9
+00:00:15,000 --> 00:00:16,700
+But fuel does not
+
+10
+00:00:16,710 --> 00:00:17,710
+last forever.
+
+11
+00:00:18,250 --> 00:00:20,430
+As fusion slows, outward
+
+12
+00:00:20,440 --> 00:00:22,550
+pressure weakens, and gravity
+
+13
+00:00:22,560 --> 00:00:23,720
+compresses the core.
+
+14
+00:00:24,030 --> 00:00:25,410
+Under the right conditions,
+
+15
+00:00:25,420 --> 00:00:27,070
+collapse can leave a
+
+16
+00:00:27,080 --> 00:00:27,870
+black hole.
+
+17
+00:00:29,142 --> 00:00:30,912
+Its event horizon is
+
+18
+00:00:30,922 --> 00:00:32,382
+not a solid surface.
+
+19
+00:00:32,972 --> 00:00:34,132
+It marks a boundary
+
+20
+00:00:34,142 --> 00:00:35,802
+beyond which light cannot
+
+21
+00:00:35,812 --> 00:00:36,332
+escape.
+
+22
+00:00:37,092 --> 00:00:38,732
+Outside it, light may
+
+23
+00:00:38,742 --> 00:00:40,242
+bend along the curved
+
+24
+00:00:40,252 --> 00:00:41,892
+paths of spacetime.
